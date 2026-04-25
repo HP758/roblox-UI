@@ -1,3 +1,10 @@
+--==============================================================
+--  DynamicUI  v1.2  （修复版）
+--  · 修复 UI 生成在屏幕外
+--  · 修复边缘拖不动
+--  · 优化对比度，字 / 控件 / 背景 都看得清
+--==============================================================
+
 local Players          = game:GetService("Players")
 local TweenService     = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -10,11 +17,11 @@ local DynamicUI = {}
 DynamicUI.__index = DynamicUI
 
 ------------------------------------------------------------------
--- 工具函数
+-- 工具
 ------------------------------------------------------------------
-local EASE_OUT  = TweenInfo.new(0.38, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-local EASE_FAST = TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-local EASE_SPRING = TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local EASE_OUT    = TweenInfo.new(0.38, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local EASE_FAST   = TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local EASE_SPRING = TweenInfo.new(0.55, Enum.EasingStyle.Back,  Enum.EasingDirection.Out)
 
 local function tw(obj, info, props)
 	local t = TweenService:Create(obj, info, props)
@@ -38,25 +45,45 @@ local function stroke(p, color, trans, thick)
 	return s
 end
 
-local function clampToScreen(pos, size, screenSize)
-	-- 保证 UI 不会被拖出屏幕
-	local xOff = math.clamp(pos.X.Offset,
-		-size.X.Offset * pos.X.Scale,
-		screenSize.X - size.X.Offset - screenSize.X * pos.X.Scale)
-	local yOff = math.clamp(pos.Y.Offset,
-		-size.Y.Offset * pos.Y.Scale,
-		screenSize.Y - size.Y.Offset - screenSize.Y * pos.Y.Scale)
-	return UDim2.new(pos.X.Scale, xOff, pos.Y.Scale, yOff)
+------------------------------------------------------------------
+-- 屏幕边界限制（修复版）
+-- 关键：考虑 AnchorPoint，正确算出窗口左上角的实际位置
+------------------------------------------------------------------
+local function clampPosition(target, screenSize)
+	local absSize = target.AbsoluteSize
+	local pos     = target.Position
+	local anchor  = target.AnchorPoint
+
+	-- 当前左上角实际像素坐标
+	local pxX = pos.X.Scale * screenSize.X + pos.X.Offset - anchor.X * absSize.X
+	local pxY = pos.Y.Scale * screenSize.Y + pos.Y.Offset - anchor.Y * absSize.Y
+
+	-- 限制到屏幕内（允许窗口紧贴边缘）
+	local minX, minY = 0, 0
+	local maxX = screenSize.X - absSize.X
+	local maxY = screenSize.Y - absSize.Y
+	if maxX < 0 then maxX = 0 end
+	if maxY < 0 then maxY = 0 end
+
+	local newPxX = math.clamp(pxX, minX, maxX)
+	local newPxY = math.clamp(pxY, minY, maxY)
+
+	if newPxX ~= pxX or newPxY ~= pxY then
+		-- 反推回 UDim2（保留 anchor）
+		target.Position = UDim2.new(
+			0, newPxX + anchor.X * absSize.X,
+			0, newPxY + anchor.Y * absSize.Y
+		)
+	end
 end
 
 ------------------------------------------------------------------
--- 单例 ScreenGui + 通知系统
+-- 单例 GUI + 通知
 ------------------------------------------------------------------
 local function ensureGui()
-	local existing = PlayerGui:FindFirstChild("DynamicUI_Root")
-	if existing then return existing end
-
-	local g = Instance.new("ScreenGui")
+	local g = PlayerGui:FindFirstChild("DynamicUI_Root")
+	if g then return g end
+	g = Instance.new("ScreenGui")
 	g.Name = "DynamicUI_Root"
 	g.IgnoreGuiInset = true
 	g.ResetOnSpawn = false
@@ -68,7 +95,6 @@ end
 local function ensureNotifyHolder(gui)
 	local h = gui:FindFirstChild("NotifyHolder")
 	if h then return h end
-
 	h = Instance.new("Frame")
 	h.Name = "NotifyHolder"
 	h.AnchorPoint = Vector2.new(1, 1)
@@ -94,10 +120,10 @@ function DynamicUI:Notify(text, kind)
 	local holder = ensureNotifyHolder(gui)
 
 	local colors = {
-		success = Color3.fromRGB(90, 190, 120),
-		warn    = Color3.fromRGB(240, 170, 70),
-		error   = Color3.fromRGB(240, 90, 90),
-		info    = Color3.fromRGB(90, 140, 255),
+		success = Color3.fromRGB(80, 200, 130),
+		warn    = Color3.fromRGB(245, 175, 70),
+		error   = Color3.fromRGB(240, 95, 95),
+		info    = Color3.fromRGB(95, 150, 255),
 	}
 	local accent = colors[kind] or colors.info
 
@@ -109,7 +135,7 @@ function DynamicUI:Notify(text, kind)
 	card.ZIndex = 201
 	card.Parent = holder
 	corner(card, UDim.new(0, 12))
-	stroke(card, Color3.fromRGB(255,255,255), 0.55, 1)
+	stroke(card, Color3.fromRGB(220,220,235), 0.2, 1)
 
 	local strip = Instance.new("Frame")
 	strip.Size = UDim2.new(0, 4, 1, -14)
@@ -136,14 +162,14 @@ function DynamicUI:Notify(text, kind)
 	msg.Font = Enum.Font.GothamMedium
 	msg.TextSize = 12
 	msg.TextXAlignment = Enum.TextXAlignment.Left
-	msg.TextColor3 = Color3.fromRGB(25,25,32)
+	msg.TextColor3 = Color3.fromRGB(20,20,28)
 	msg.TextTransparency = 1
 	msg.Text = text
 	msg.TextWrapped = true
 	msg.ZIndex = 203
 	msg.Parent = card
 
-	tw(card, EASE_OUT, {BackgroundTransparency = 0.12})
+	tw(card, EASE_OUT, {BackgroundTransparency = 0.05})
 	tw(msg,  EASE_OUT, {TextTransparency = 0})
 
 	task.delay(2.4, function()
@@ -155,21 +181,20 @@ function DynamicUI:Notify(text, kind)
 end
 
 ------------------------------------------------------------------
--- 加载进度条
+-- 加载条
 ------------------------------------------------------------------
 local function showLoader(gui, onDone)
 	local loader = Instance.new("Frame")
-	loader.Name = "Loader"
 	loader.AnchorPoint = Vector2.new(0.5, 0.5)
 	loader.Position = UDim2.fromScale(0.5, 0.5)
 	loader.Size = UDim2.fromOffset(320, 70)
 	loader.BackgroundColor3 = Color3.fromRGB(255,255,255)
-	loader.BackgroundTransparency = 0.25
+	loader.BackgroundTransparency = 0.05
 	loader.BorderSizePixel = 0
 	loader.ZIndex = 120
 	loader.Parent = gui
 	corner(loader, UDim.new(0, 18))
-	stroke(loader, Color3.fromRGB(255,255,255), 0.4, 1)
+	stroke(loader, Color3.fromRGB(210,210,225), 0.2, 1)
 
 	local title = Instance.new("TextLabel")
 	title.BackgroundTransparency = 1
@@ -178,7 +203,7 @@ local function showLoader(gui, onDone)
 	title.Font = Enum.Font.GothamSemibold
 	title.TextSize = 13
 	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.TextColor3 = Color3.fromRGB(25,25,32)
+	title.TextColor3 = Color3.fromRGB(20,20,28)
 	title.Text = "正在加载 DynamicUI ..."
 	title.ZIndex = 121
 	title.Parent = loader
@@ -190,7 +215,7 @@ local function showLoader(gui, onDone)
 	pct.Font = Enum.Font.GothamBold
 	pct.TextSize = 13
 	pct.TextXAlignment = Enum.TextXAlignment.Right
-	pct.TextColor3 = Color3.fromRGB(90,140,255)
+	pct.TextColor3 = Color3.fromRGB(95,150,255)
 	pct.Text = "0%"
 	pct.ZIndex = 121
 	pct.Parent = loader
@@ -198,7 +223,7 @@ local function showLoader(gui, onDone)
 	local back = Instance.new("Frame")
 	back.Position = UDim2.new(0, 16, 1, -24)
 	back.Size = UDim2.new(1, -32, 0, 8)
-	back.BackgroundColor3 = Color3.fromRGB(230,230,240)
+	back.BackgroundColor3 = Color3.fromRGB(228,228,238)
 	back.BorderSizePixel = 0
 	back.ZIndex = 121
 	back.Parent = loader
@@ -206,7 +231,7 @@ local function showLoader(gui, onDone)
 
 	local fill = Instance.new("Frame")
 	fill.Size = UDim2.new(0,0,1,0)
-	fill.BackgroundColor3 = Color3.fromRGB(90,140,255)
+	fill.BackgroundColor3 = Color3.fromRGB(95,150,255)
 	fill.BorderSizePixel = 0
 	fill.ZIndex = 122
 	fill.Parent = back
@@ -225,10 +250,9 @@ local function showLoader(gui, onDone)
 			tw(fill, TweenInfo.new(0.25, Enum.EasingStyle.Quint), {Size = UDim2.new(s[1]/100, 0, 1, 0)})
 			pct.Text = s[1] .. "%"
 			title.Text = s[2]
-			task.wait(0.25)
+			task.wait(0.22)
 		end
 		task.wait(0.2)
-
 		tw(loader, EASE_OUT, {BackgroundTransparency = 1})
 		for _, c in ipairs(loader:GetDescendants()) do
 			if c:IsA("TextLabel") then tw(c, EASE_OUT, {TextTransparency = 1}) end
@@ -241,10 +265,16 @@ local function showLoader(gui, onDone)
 end
 
 ------------------------------------------------------------------
--- 拖动 + 屏幕边缘防溢出
+-- 拖动（修复版）
+-- · 用 InputBegan 对整个 handle 监听
+-- · 用 UserInputService 全局追 InputChanged，鼠标走多远都跟得上
+-- · 拖动结束才 clamp，不会"被拽回去"
 ------------------------------------------------------------------
 local function makeDraggable(handle, target, gui)
-	local dragging, startInput, startPos
+	local dragging = false
+	local startInput, startPos
+
+	handle.Active = true
 	handle.InputBegan:Connect(function(i)
 		if i.UserInputType == Enum.UserInputType.MouseButton1
 		or i.UserInputType == Enum.UserInputType.Touch then
@@ -253,21 +283,28 @@ local function makeDraggable(handle, target, gui)
 			startPos = target.Position
 		end
 	end)
-	handle.InputEnded:Connect(function(i)
-		if i.UserInputType == Enum.UserInputType.MouseButton1
-		or i.UserInputType == Enum.UserInputType.Touch then
-			dragging = false
-		end
-	end)
+
 	UserInputService.InputChanged:Connect(function(i)
-		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
-		or i.UserInputType == Enum.UserInputType.Touch) then
+		if not dragging then return end
+		if i.UserInputType == Enum.UserInputType.MouseMovement
+		or i.UserInputType == Enum.UserInputType.Touch then
 			local d = i.Position - startInput
-			local newPos = UDim2.new(
+			target.Position = UDim2.new(
 				startPos.X.Scale, startPos.X.Offset + d.X,
 				startPos.Y.Scale, startPos.Y.Offset + d.Y
 			)
-			target.Position = clampToScreen(newPos, target.AbsoluteSize and UDim2.fromOffset(target.AbsoluteSize.X, target.AbsoluteSize.Y) or target.Size, gui.AbsoluteSize)
+			-- 实时限制（拖动中也不能出屏幕，但用正确算法不会卡）
+			clampPosition(target, gui.AbsoluteSize)
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1
+		or i.UserInputType == Enum.UserInputType.Touch then
+			if dragging then
+				dragging = false
+				clampPosition(target, gui.AbsoluteSize)
+			end
 		end
 	end)
 end
@@ -282,50 +319,60 @@ function DynamicUI:CreateWindow(opts)
 		Icon        = opts.Icon or "",
 		Author      = opts.Author or "",
 		Theme       = opts.Theme or "White",
-		Transparent = opts.Transparent ~= false,
 		Background  = opts.Background or "",
-		WindowSize  = opts.WindowSize or UDim2.fromOffset(580, 370),
+		WindowSize  = opts.WindowSize or UDim2.fromOffset(580, 380),
 		IslandSize  = opts.IslandSize or UDim2.fromOffset(220, 46),
 	}
 
+	-- 提亮配色 → 字 / 控件 / 背景区分明显
 	local theme = {
 		White = {
-			Glass = Color3.fromRGB(255,255,255),
-			GlassTrans = 0.30,
-			InnerTrans = 0.55,
-			Text = Color3.fromRGB(25,25,32),
-			SubText = Color3.fromRGB(70,70,82),
-			Accent = Color3.fromRGB(90,140,255),
-		},
-		Dark = {
-			Glass = Color3.fromRGB(30,30,38),
-			GlassTrans = 0.15,
-			InnerTrans = 0.35,
-			Text = Color3.fromRGB(240,240,245),
-			SubText = Color3.fromRGB(185,185,195),
-			Accent = Color3.fromRGB(120,170,255),
+			-- 玻璃面板（更亮，更白）
+			Glass        = Color3.fromRGB(255,255,255),
+			GlassTrans   = 0.10,            -- 整体白玻璃几乎实色
+			BgDimTrans   = 0.55,            -- 背景图压暗层（让背景图淡）
+			-- 内部分区面板
+			Panel        = Color3.fromRGB(245,247,252),
+			PanelTrans   = 0.10,
+			-- 行（每个控件的卡片）
+			Row          = Color3.fromRGB(255,255,255),
+			RowTrans     = 0.05,
+			RowStroke    = Color3.fromRGB(225,228,238),
+			-- 文字
+			Text         = Color3.fromRGB(22,24,32),
+			SubText      = Color3.fromRGB(95,100,115),
+			-- 强调
+			Accent       = Color3.fromRGB(95,150,255),
+			AccentSoft   = Color3.fromRGB(225,235,255),
+			-- 描边
+			Stroke       = Color3.fromRGB(215,220,232),
 		},
 	}
-	local T = theme[cfg.Theme] or theme.White
+	local T = theme.White
 
 	local gui = ensureGui()
 
+	------------------------------------------------------------------
+	-- 主窗口
+	-- 注意：用 Scale 定位 + AnchorPoint(0.5,0.5)，这样无论屏幕多大都居中
+	------------------------------------------------------------------
 	local window = Instance.new("Frame")
 	window.Name = "Window"
 	window.AnchorPoint = Vector2.new(0.5, 0.5)
-	window.Position = UDim2.fromScale(0.5, 0.5)
+	window.Position = UDim2.new(0.5, 0, 0.5, 0)
 	window.Size = cfg.WindowSize
 	window.BackgroundColor3 = T.Glass
 	window.BackgroundTransparency = 1
 	window.BorderSizePixel = 0
 	window.ClipsDescendants = true
+	window.Active = true            -- 可接收输入
 	window.Visible = false
 	window.ZIndex = 3
 	window.Parent = gui
 	corner(window, UDim.new(0, 22))
-	stroke(window, Color3.fromRGB(255,255,255), 0.55, 1.2)
+	stroke(window, T.Stroke, 0.0, 1.2)
 
-	-- 背景图
+	-- 背景图（带压暗层，避免抢戏）
 	local bgImage = Instance.new("ImageLabel")
 	bgImage.Size = UDim2.fromScale(1,1)
 	bgImage.BackgroundTransparency = 1
@@ -335,7 +382,7 @@ function DynamicUI:CreateWindow(opts)
 	bgImage.ZIndex = 3
 	bgImage.Parent = window
 
-	-- 玻璃层
+	-- 白玻璃压亮层
 	local glass = Instance.new("Frame")
 	glass.Size = UDim2.fromScale(1,1)
 	glass.BackgroundColor3 = T.Glass
@@ -344,36 +391,36 @@ function DynamicUI:CreateWindow(opts)
 	glass.ZIndex = 4
 	glass.Parent = window
 
-	local grad = Instance.new("UIGradient")
-	grad.Rotation = 90
-	grad.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.20),
-		NumberSequenceKeypoint.new(1, 0.50),
-	})
-	grad.Parent = glass
+	------------------------------------------------------------------
+	-- 拖动手柄（关键修复 ②）
+	-- 单独做一个透明的拖动条，覆盖顶部一整条，包括边缘
+	-- 它的 ZIndex 比标题文字低，比按钮低 → 按钮还能点
+	------------------------------------------------------------------
+	local dragHandle = Instance.new("TextButton")
+	dragHandle.Name = "DragHandle"
+	dragHandle.Size = UDim2.new(1, 0, 0, 46)
+	dragHandle.Position = UDim2.fromOffset(0, 0)
+	dragHandle.BackgroundTransparency = 1
+	dragHandle.Text = ""
+	dragHandle.AutoButtonColor = false
+	dragHandle.ZIndex = 5
+	dragHandle.Parent = window
 
-	-- 顶栏
+	-- 顶栏装饰区（在 dragHandle 之上画图标 / 标题 / 按钮）
 	local topBar = Instance.new("Frame")
 	topBar.Size = UDim2.new(1, 0, 0, 46)
 	topBar.BackgroundTransparency = 1
 	topBar.ZIndex = 6
 	topBar.Parent = window
 
-	-- 图标 + 标题
-	local titleHolder = Instance.new("Frame")
-	titleHolder.Position = UDim2.new(0, 18, 0, 0)
-	titleHolder.Size = UDim2.new(0.6, 0, 1, 0)
-	titleHolder.BackgroundTransparency = 1
-	titleHolder.ZIndex = 7
-	titleHolder.Parent = topBar
-
+	-- 图标圆点
 	local iconDot = Instance.new("Frame")
 	iconDot.Size = UDim2.fromOffset(22, 22)
-	iconDot.Position = UDim2.new(0, 0, 0.5, -11)
+	iconDot.Position = UDim2.new(0, 18, 0.5, -11)
 	iconDot.BackgroundColor3 = T.Accent
 	iconDot.BorderSizePixel = 0
 	iconDot.ZIndex = 7
-	iconDot.Parent = titleHolder
+	iconDot.Parent = topBar
 	corner(iconDot, UDim.new(1,0))
 
 	local iconLabel = Instance.new("TextLabel")
@@ -382,47 +429,47 @@ function DynamicUI:CreateWindow(opts)
 	iconLabel.Font = Enum.Font.GothamBold
 	iconLabel.TextSize = 11
 	iconLabel.TextColor3 = Color3.fromRGB(255,255,255)
-	iconLabel.Text = string.sub(cfg.Icon ~= "" and cfg.Icon:sub(1,1):upper() or cfg.Title:sub(1,1):upper(), 1, 1)
+	iconLabel.Text = (cfg.Icon ~= "" and cfg.Icon:sub(1,1):upper()) or cfg.Title:sub(1,1):upper()
 	iconLabel.ZIndex = 8
 	iconLabel.Parent = iconDot
 
 	local winTitle = Instance.new("TextLabel")
 	winTitle.BackgroundTransparency = 1
-	winTitle.Position = UDim2.new(0, 32, 0, 4)
-	winTitle.Size = UDim2.new(1, -32, 0, 18)
+	winTitle.Position = UDim2.new(0, 50, 0, 6)
+	winTitle.Size = UDim2.new(0.6, 0, 0, 18)
 	winTitle.Font = Enum.Font.GothamBold
 	winTitle.TextSize = 14
 	winTitle.TextXAlignment = Enum.TextXAlignment.Left
 	winTitle.TextColor3 = T.Text
 	winTitle.Text = cfg.Title
 	winTitle.ZIndex = 7
-	winTitle.Parent = titleHolder
+	winTitle.Parent = topBar
 
 	local winSub = Instance.new("TextLabel")
 	winSub.BackgroundTransparency = 1
-	winSub.Position = UDim2.new(0, 32, 0, 22)
-	winSub.Size = UDim2.new(1, -32, 0, 14)
+	winSub.Position = UDim2.new(0, 50, 0, 24)
+	winSub.Size = UDim2.new(0.6, 0, 0, 14)
 	winSub.Font = Enum.Font.Gotham
 	winSub.TextSize = 11
 	winSub.TextXAlignment = Enum.TextXAlignment.Left
 	winSub.TextColor3 = T.SubText
-	winSub.Text = cfg.Author ~= "" and ("by " .. cfg.Author) or "v1.1"
+	winSub.Text = cfg.Author ~= "" and ("by " .. cfg.Author) or "v1.2"
 	winSub.ZIndex = 7
-	winSub.Parent = titleHolder
+	winSub.Parent = topBar
 
-	-- 圆形按钮
+	-- 按钮（注意 ZIndex 高于 dragHandle，所以按钮能点）
 	local function makeBtn(symbol, color)
 		local b = Instance.new("TextButton")
 		b.Size = UDim2.fromOffset(24, 24)
 		b.BackgroundColor3 = color
-		b.BackgroundTransparency = 0.1
+		b.BackgroundTransparency = 0
 		b.BorderSizePixel = 0
 		b.AutoButtonColor = false
 		b.Font = Enum.Font.GothamBold
 		b.TextSize = 12
 		b.Text = symbol
 		b.TextColor3 = Color3.fromRGB(255,255,255)
-		b.ZIndex = 7
+		b.ZIndex = 9
 		corner(b, UDim.new(1,0))
 		return b
 	end
@@ -437,21 +484,24 @@ function DynamicUI:CreateWindow(opts)
 	btnMin.Position = UDim2.new(1, -44, 0.5, 0)
 	btnMin.Parent = topBar
 
+	------------------------------------------------------------------
 	-- Tab 栏
+	------------------------------------------------------------------
 	local tabScroll = Instance.new("ScrollingFrame")
 	tabScroll.Position = UDim2.new(0, 14, 0, 52)
 	tabScroll.Size = UDim2.new(1, -28, 0, 34)
-	tabScroll.BackgroundColor3 = Color3.fromRGB(255,255,255)
-	tabScroll.BackgroundTransparency = 0.55
+	tabScroll.BackgroundColor3 = T.Panel
+	tabScroll.BackgroundTransparency = T.PanelTrans
 	tabScroll.BorderSizePixel = 0
 	tabScroll.ScrollBarThickness = 0
 	tabScroll.ScrollingDirection = Enum.ScrollingDirection.X
 	tabScroll.CanvasSize = UDim2.new(0,0,0,0)
 	tabScroll.AutomaticCanvasSize = Enum.AutomaticSize.X
-	tabScroll.ElasticBehavior = Enum.ElasticBehavior.Never -- 关键：到边停住，防止滑出
+	tabScroll.ElasticBehavior = Enum.ElasticBehavior.Never
 	tabScroll.ZIndex = 6
 	tabScroll.Parent = window
 	corner(tabScroll, UDim.new(1,0))
+	stroke(tabScroll, T.Stroke, 0.5, 1)
 
 	local tabList = Instance.new("UIListLayout")
 	tabList.FillDirection = Enum.FillDirection.Horizontal
@@ -461,58 +511,52 @@ function DynamicUI:CreateWindow(opts)
 	tabList.Parent = tabScroll
 
 	local tabPad = Instance.new("UIPadding")
-	tabPad.PaddingLeft = UDim.new(0, 8)
-	tabPad.PaddingRight = UDim.new(0, 8)
+	tabPad.PaddingLeft = UDim.new(0, 6)
+	tabPad.PaddingRight = UDim.new(0, 6)
 	tabPad.Parent = tabScroll
 
 	-- 内容区
 	local contentHolder = Instance.new("Frame")
-	contentHolder.Position = UDim2.new(0, 14, 0, 94)
-	contentHolder.Size = UDim2.new(1, -28, 1, -108)
-	contentHolder.BackgroundColor3 = Color3.fromRGB(255,255,255)
-	contentHolder.BackgroundTransparency = 0.55
+	contentHolder.Position = UDim2.new(0, 14, 0, 96)
+	contentHolder.Size = UDim2.new(1, -28, 1, -110)
+	contentHolder.BackgroundColor3 = T.Panel
+	contentHolder.BackgroundTransparency = T.PanelTrans
 	contentHolder.BorderSizePixel = 0
 	contentHolder.ClipsDescendants = true
 	contentHolder.ZIndex = 6
 	contentHolder.Parent = window
 	corner(contentHolder, UDim.new(0, 16))
+	stroke(contentHolder, T.Stroke, 0.5, 1)
 
 	------------------------------------------------------------------
-	-- 灵动岛（回归最初版设计 —— 简洁胶囊 + 状态圆点 + 波形）
+	-- 灵动岛
 	------------------------------------------------------------------
 	local island = Instance.new("Frame")
 	island.Name = "Island"
 	island.AnchorPoint = Vector2.new(0.5, 0)
 	island.Position = UDim2.new(0.5, 0, 0, 14)
 	island.Size = cfg.IslandSize
-	island.BackgroundColor3 = T.Glass
-	island.BackgroundTransparency = 0.22
+	island.BackgroundColor3 = Color3.fromRGB(255,255,255)
+	island.BackgroundTransparency = 0.05
 	island.BorderSizePixel = 0
 	island.ClipsDescendants = true
+	island.Active = true
 	island.Visible = false
 	island.ZIndex = 60
 	island.Parent = gui
 	corner(island, UDim.new(1,0))
-	stroke(island, Color3.fromRGB(255,255,255), 0.38, 1)
+	stroke(island, T.Stroke, 0.2, 1)
 
 	local iBg = Instance.new("ImageLabel")
 	iBg.Size = UDim2.fromScale(1,1)
 	iBg.BackgroundTransparency = 1
 	iBg.Image = cfg.Background
 	iBg.ScaleType = Enum.ScaleType.Crop
-	iBg.ImageTransparency = 0.25
+	iBg.ImageTransparency = 0.55
 	iBg.ZIndex = 60
 	iBg.Parent = island
 
-	local iGlass = Instance.new("Frame")
-	iGlass.Size = UDim2.fromScale(1,1)
-	iGlass.BackgroundColor3 = Color3.fromRGB(255,255,255)
-	iGlass.BackgroundTransparency = 0.45
-	iGlass.BorderSizePixel = 0
-	iGlass.ZIndex = 61
-	iGlass.Parent = island
-
-	-- 左侧状态圆点
+	-- 状态点
 	local statusDot = Instance.new("Frame")
 	statusDot.Size = UDim2.fromOffset(10, 10)
 	statusDot.Position = UDim2.new(0, 14, 0.5, -5)
@@ -522,7 +566,6 @@ function DynamicUI:CreateWindow(opts)
 	statusDot.Parent = island
 	corner(statusDot, UDim.new(1,0))
 
-	-- 呼吸动画
 	task.spawn(function()
 		while statusDot.Parent do
 			tw(statusDot, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {BackgroundTransparency = 0.55})
@@ -532,7 +575,6 @@ function DynamicUI:CreateWindow(opts)
 		end
 	end)
 
-	-- 中间标题
 	local iTitle = Instance.new("TextLabel")
 	iTitle.BackgroundTransparency = 1
 	iTitle.Position = UDim2.new(0, 32, 0, 0)
@@ -545,7 +587,6 @@ function DynamicUI:CreateWindow(opts)
 	iTitle.ZIndex = 63
 	iTitle.Parent = island
 
-	-- 右侧波形
 	local waveWrap = Instance.new("Frame")
 	waveWrap.AnchorPoint = Vector2.new(1, 0.5)
 	waveWrap.Position = UDim2.new(1, -14, 0.5, 0)
@@ -574,19 +615,25 @@ function DynamicUI:CreateWindow(opts)
 		end)
 	end
 
-	-- 点击整个灵动岛恢复窗口
-	local islandBtn = Instance.new("TextButton")
-	islandBtn.BackgroundTransparency = 1
-	islandBtn.Text = ""
-	islandBtn.Size = UDim2.fromScale(1,1)
-	islandBtn.ZIndex = 70
-	islandBtn.AutoButtonColor = false
-	islandBtn.Parent = island
-
-	makeDraggable(island, island, gui)
+	-- 灵动岛点击层（铺满，但 ZIndex 比按钮低）
+	local islandClick = Instance.new("TextButton")
+	islandClick.BackgroundTransparency = 1
+	islandClick.Text = ""
+	islandClick.Size = UDim2.fromScale(1,1)
+	islandClick.AutoButtonColor = false
+	islandClick.ZIndex = 65
+	islandClick.Parent = island
 
 	------------------------------------------------------------------
-	-- Tab 构建器
+	-- 拖动绑定（修复版）
+	-- 主窗用 dragHandle（覆盖整个顶部，包括边缘）
+	-- 灵动岛整个胶囊都能拖
+	------------------------------------------------------------------
+	makeDraggable(dragHandle, window, gui)
+	makeDraggable(island,     island, gui)
+
+	------------------------------------------------------------------
+	-- Tab API
 	------------------------------------------------------------------
 	local Window = {}
 	Window.tabs = {}
@@ -597,8 +644,9 @@ function DynamicUI:CreateWindow(opts)
 		for n, t in pairs(Window.tabs) do
 			local active = (n == name)
 			tw(t.button, EASE_FAST, {
-				BackgroundTransparency = active and 0.05 or 0.55,
-				TextColor3 = active and T.Accent or T.SubText,
+				BackgroundColor3 = active and T.Accent or Color3.fromRGB(255,255,255),
+				BackgroundTransparency = active and 0 or 0.1,
+				TextColor3 = active and Color3.fromRGB(255,255,255) or T.SubText,
 			})
 			t.page.Visible = active
 			if active then
@@ -613,7 +661,7 @@ function DynamicUI:CreateWindow(opts)
 		local btn = Instance.new("TextButton")
 		btn.Size = UDim2.fromOffset(96, 26)
 		btn.BackgroundColor3 = Color3.fromRGB(255,255,255)
-		btn.BackgroundTransparency = 0.55
+		btn.BackgroundTransparency = 0.1
 		btn.BorderSizePixel = 0
 		btn.AutoButtonColor = false
 		btn.Font = Enum.Font.GothamSemibold
@@ -623,6 +671,7 @@ function DynamicUI:CreateWindow(opts)
 		btn.ZIndex = 7
 		btn.Parent = tabScroll
 		corner(btn, UDim.new(1,0))
+		stroke(btn, T.Stroke, 0.4, 1)
 
 		local page = Instance.new("ScrollingFrame")
 		page.Size = UDim2.fromScale(1,1)
@@ -633,7 +682,7 @@ function DynamicUI:CreateWindow(opts)
 		page.CanvasSize = UDim2.new(0,0,0,0)
 		page.AutomaticCanvasSize = Enum.AutomaticSize.Y
 		page.ScrollingDirection = Enum.ScrollingDirection.Y
-		page.ElasticBehavior = Enum.ElasticBehavior.Never -- 防止越界
+		page.ElasticBehavior = Enum.ElasticBehavior.Never
 		page.Visible = false
 		page.ZIndex = 7
 		page.Parent = contentHolder
@@ -650,9 +699,7 @@ function DynamicUI:CreateWindow(opts)
 		pad.PaddingBottom = UDim.new(0, 14)
 		pad.Parent = page
 
-		btn.MouseButton1Click:Connect(function()
-			switchTab(name)
-		end)
+		btn.MouseButton1Click:Connect(function() switchTab(name) end)
 
 		Window.tabs[name] = {button = btn, page = page}
 
@@ -661,12 +708,13 @@ function DynamicUI:CreateWindow(opts)
 		local function rowBase(h)
 			local r = Instance.new("Frame")
 			r.Size = UDim2.new(1, 0, 0, h or 44)
-			r.BackgroundColor3 = Color3.fromRGB(255,255,255)
-			r.BackgroundTransparency = 0.45
+			r.BackgroundColor3 = T.Row
+			r.BackgroundTransparency = T.RowTrans
 			r.BorderSizePixel = 0
 			r.ZIndex = 8
 			r.Parent = page
 			corner(r, UDim.new(0, 12))
+			stroke(r, T.RowStroke, 0.3, 1)
 			return r
 		end
 
@@ -721,9 +769,9 @@ function DynamicUI:CreateWindow(opts)
 			chev.Parent = r
 
 			b.MouseButton1Click:Connect(function()
-				tw(r, EASE_FAST, {BackgroundTransparency = 0.15})
-				task.delay(0.12, function()
-					tw(r, EASE_FAST, {BackgroundTransparency = 0.45})
+				tw(r, EASE_FAST, {BackgroundColor3 = T.AccentSoft})
+				task.delay(0.14, function()
+					tw(r, EASE_FAST, {BackgroundColor3 = T.Row})
 				end)
 				if cb then cb() end
 				DynamicUI:Notify(text .. " 执行成功", "success")
@@ -752,7 +800,7 @@ function DynamicUI:CreateWindow(opts)
 			track.Size = UDim2.fromOffset(42, 22)
 			track.AutoButtonColor = false
 			track.Text = ""
-			track.BackgroundColor3 = state and T.Accent or Color3.fromRGB(200,200,210)
+			track.BackgroundColor3 = state and T.Accent or Color3.fromRGB(210,213,225)
 			track.BorderSizePixel = 0
 			track.ZIndex = 10
 			track.Parent = r
@@ -770,7 +818,7 @@ function DynamicUI:CreateWindow(opts)
 			track.MouseButton1Click:Connect(function()
 				state = not state
 				tw(track, EASE_FAST, {
-					BackgroundColor3 = state and T.Accent or Color3.fromRGB(200,200,210)
+					BackgroundColor3 = state and T.Accent or Color3.fromRGB(210,213,225)
 				})
 				tw(dot, EASE_FAST, {
 					Position = state and UDim2.new(1,-20,0.5,-9) or UDim2.new(0,2,0.5,-9)
@@ -812,7 +860,7 @@ function DynamicUI:CreateWindow(opts)
 			local track = Instance.new("Frame")
 			track.Position = UDim2.new(0, 14, 1, -18)
 			track.Size = UDim2.new(1, -28, 0, 6)
-			track.BackgroundColor3 = Color3.fromRGB(220,220,230)
+			track.BackgroundColor3 = Color3.fromRGB(225,228,238)
 			track.BorderSizePixel = 0
 			track.ZIndex = 10
 			track.Parent = r
@@ -879,8 +927,8 @@ function DynamicUI:CreateWindow(opts)
 			pick.AnchorPoint = Vector2.new(1, 0.5)
 			pick.Position = UDim2.new(1, -14, 0.5, 0)
 			pick.Size = UDim2.fromOffset(150, 28)
-			pick.BackgroundColor3 = Color3.fromRGB(255,255,255)
-			pick.BackgroundTransparency = 0.15
+			pick.BackgroundColor3 = T.AccentSoft
+			pick.BackgroundTransparency = 0
 			pick.BorderSizePixel = 0
 			pick.AutoButtonColor = false
 			pick.Font = Enum.Font.GothamMedium
@@ -895,13 +943,14 @@ function DynamicUI:CreateWindow(opts)
 			list.Size = UDim2.new(1, 0, 0, 0)
 			list.Position = UDim2.new(0, 0, 1, 6)
 			list.BackgroundColor3 = Color3.fromRGB(255,255,255)
-			list.BackgroundTransparency = 0.1
+			list.BackgroundTransparency = 0
 			list.BorderSizePixel = 0
 			list.ClipsDescendants = true
 			list.Visible = false
 			list.ZIndex = 12
 			list.Parent = r
 			corner(list, UDim.new(0, 10))
+			stroke(list, T.Stroke, 0.2, 1)
 
 			local ll = Instance.new("UIListLayout")
 			ll.Parent = list
@@ -941,22 +990,16 @@ function DynamicUI:CreateWindow(opts)
 			end)
 		end
 
-		-- 默认激活第一个 Tab
-		if not Window.current then
-			switchTab(name)
-		end
-
+		if not Window.current then switchTab(name) end
 		return Tab
 	end
 
-	function Window:SetTitle(text)  winTitle.Text = text; iTitle.Text = text end
+	function Window:SetTitle(text) winTitle.Text = text; iTitle.Text = text end
 	function Window:Destroy() window:Destroy(); island:Destroy() end
 
 	------------------------------------------------------------------
-	-- 拖动 + 最小化 / 关闭
+	-- 最小化 / 关闭
 	------------------------------------------------------------------
-	makeDraggable(topBar, window, gui)
-
 	local minimized = false
 	local function setMin(s)
 		minimized = s
@@ -966,9 +1009,7 @@ function DynamicUI:CreateWindow(opts)
 				BackgroundTransparency = 1,
 			})
 			tw(bgImage, EASE_OUT, {ImageTransparency = 1})
-			task.delay(0.4, function()
-				if minimized then window.Visible = false end
-			end)
+			task.delay(0.4, function() if minimized then window.Visible = false end end)
 
 			island.Visible = true
 			island.Size = UDim2.fromOffset(40, 44)
@@ -976,66 +1017,67 @@ function DynamicUI:CreateWindow(opts)
 			iBg.ImageTransparency = 1
 			tw(island, EASE_SPRING, {
 				Size = cfg.IslandSize,
-				BackgroundTransparency = 0.22,
+				BackgroundTransparency = 0.05,
 			})
-			tw(iBg, EASE_OUT, {ImageTransparency = 0.25})
+			tw(iBg, EASE_OUT, {ImageTransparency = 0.55})
 			DynamicUI:Notify("已最小化到灵动岛", "info")
 		else
 			window.Visible = true
 			window.Size = UDim2.fromOffset(cfg.WindowSize.X.Offset, 0)
 			tw(window, EASE_SPRING, {
 				Size = cfg.WindowSize,
-				BackgroundTransparency = 0,
+				BackgroundTransparency = T.GlassTrans,
 			})
-			tw(bgImage, EASE_OUT, {ImageTransparency = 0.18})
+			tw(bgImage, EASE_OUT, {ImageTransparency = T.BgDimTrans})
 
 			tw(island, EASE_OUT, {
 				Size = UDim2.fromOffset(40, 44),
 				BackgroundTransparency = 1,
 			})
 			tw(iBg, EASE_OUT, {ImageTransparency = 1})
-			task.delay(0.4, function()
-				if not minimized then island.Visible = false end
-			end)
+			task.delay(0.4, function() if not minimized then island.Visible = false end end)
 			DynamicUI:Notify("已恢复主窗口", "success")
 		end
 	end
 
 	btnMin.MouseButton1Click:Connect(function() setMin(true) end)
-	islandBtn.MouseButton1Click:Connect(function() setMin(false) end)
+	islandClick.MouseButton1Click:Connect(function() setMin(false) end)
 
 	btnClose.MouseButton1Click:Connect(function()
 		DynamicUI:Notify("UI 已关闭", "warn")
 		tw(window, EASE_OUT, {Size = UDim2.fromOffset(0,0), BackgroundTransparency = 1})
 		tw(island, EASE_OUT, {Size = UDim2.fromOffset(0,0), BackgroundTransparency = 1})
 		task.wait(0.4)
-		window:Destroy()
-		island:Destroy()
+		window:Destroy(); island:Destroy()
 	end)
 
 	------------------------------------------------------------------
-	-- 加载动画 → 弹出窗口
+	-- 加载 → 弹出窗口（关键修复 ①：先确保位置正确，再显示）
 	------------------------------------------------------------------
 	showLoader(gui, function()
-		window.Visible = true
+		-- 先把窗口放在屏幕正中
+		window.Position = UDim2.new(0.5, 0, 0.5, 0)
 		window.Size = UDim2.fromOffset(cfg.WindowSize.X.Offset, 0)
 		window.BackgroundTransparency = 1
+		window.Visible = true
+
 		tw(window, EASE_SPRING, {
 			Size = cfg.WindowSize,
-			BackgroundTransparency = 0,
+			BackgroundTransparency = T.GlassTrans,
 		})
-		tw(bgImage, EASE_OUT, {ImageTransparency = 0.18})
+		tw(bgImage, EASE_OUT, {ImageTransparency = T.BgDimTrans})
+
+		-- 一帧后再校正一次（防止初始 AbsoluteSize 还没算出来）
+		task.wait()
+		clampPosition(window, gui.AbsoluteSize)
+
 		DynamicUI:Notify((cfg.Title or "DynamicUI") .. " 加载成功", "success")
 	end)
 
-	-- 窗口防拖出屏幕（持续检查）
-	RunService.RenderStepped:Connect(function()
-		if window.Visible then
-			window.Position = clampToScreen(window.Position, UDim2.fromOffset(window.AbsoluteSize.X, window.AbsoluteSize.Y), gui.AbsoluteSize)
-		end
-		if island.Visible then
-			island.Position = clampToScreen(island.Position, UDim2.fromOffset(island.AbsoluteSize.X, island.AbsoluteSize.Y), gui.AbsoluteSize)
-		end
+	-- 屏幕变化时也校正
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		if window.Visible then clampPosition(window, gui.AbsoluteSize) end
+		if island.Visible then clampPosition(island, gui.AbsoluteSize) end
 	end)
 
 	return Window

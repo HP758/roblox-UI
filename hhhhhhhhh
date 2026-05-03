@@ -1,7 +1,3 @@
---==============================================================
---  DynamicUI  v1.4  · 修复全部已知 bug + 大量动效
---==============================================================
-
 local Players          = game:GetService("Players")
 local TweenService     = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -19,7 +15,7 @@ DynamicUI.__index = DynamicUI
 local EASE_OUT    = TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 local EASE_FAST   = TweenInfo.new(0.14, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 local EASE_SPRING = TweenInfo.new(0.45, Enum.EasingStyle.Back,  Enum.EasingDirection.Out)
-local EASE_BOUNCE = TweenInfo.new(0.5,  Enum.EasingStyle.Elastic, Enum.EasingDirection.Out)
+local EASE_SLOW   = TweenInfo.new(0.6,  Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 
 local function tw(obj, info, props)
 	if not obj or not obj.Parent then return end
@@ -44,8 +40,16 @@ local function stroke(p, color, trans, thick)
 	return s
 end
 
+local function gradient(p, c1, c2, rotation)
+	local g = Instance.new("UIGradient")
+	g.Color = ColorSequence.new(c1, c2)
+	g.Rotation = rotation or 0
+	g.Parent = p
+	return g
+end
+
 ------------------------------------------------------------------
--- 屏幕边界限制
+-- 边界限制
 ------------------------------------------------------------------
 local function clampPosition(target, screenSize)
 	if not target or not target.Parent then return end
@@ -111,8 +115,9 @@ local function ensureNotifyHolder(gui)
 	return h
 end
 
-function DynamicUI:Notify(text, kind)
+function DynamicUI:Notify(text, kind, duration)
 	kind = kind or "info"
+	duration = duration or 2.4
 	local gui = ensureGui()
 	local holder = ensureNotifyHolder(gui)
 
@@ -124,17 +129,18 @@ function DynamicUI:Notify(text, kind)
 	}
 	local accent = colors[kind] or colors.info
 
-	-- 外层包裹：用来做"滑入"位移
 	local wrap = Instance.new("Frame")
-	wrap.Size = UDim2.fromOffset(252, 46)
+	wrap.Size = UDim2.fromOffset(252, 50)
 	wrap.BackgroundTransparency = 1
 	wrap.BorderSizePixel = 0
 	wrap.ZIndex = 1001
 	wrap.Parent = holder
 
-	local card = Instance.new("Frame")
+	local card = Instance.new("TextButton")
+	card.AutoButtonColor = false
+	card.Text = ""
 	card.AnchorPoint = Vector2.new(0, 0)
-	card.Position = UDim2.fromOffset(40, 0)  -- 从右滑入
+	card.Position = UDim2.fromOffset(40, 0)
 	card.Size = UDim2.fromOffset(252, 46)
 	card.BackgroundColor3 = Color3.fromRGB(252, 252, 253)
 	card.BackgroundTransparency = 1
@@ -145,7 +151,7 @@ function DynamicUI:Notify(text, kind)
 	stroke(card, Color3.fromRGB(218, 220, 230), 0.1, 1)
 
 	local strip = Instance.new("Frame")
-	strip.Size = UDim2.new(0, 0, 1, -16)  -- 从 0 长度展开
+	strip.Size = UDim2.new(0, 0, 1, -16)
 	strip.Position = UDim2.new(0, 10, 0, 8)
 	strip.BackgroundColor3 = accent
 	strip.BorderSizePixel = 0
@@ -156,7 +162,7 @@ function DynamicUI:Notify(text, kind)
 	local msg = Instance.new("TextLabel")
 	msg.BackgroundTransparency = 1
 	msg.Position = UDim2.new(0, 22, 0, 0)
-	msg.Size = UDim2.new(1, -32, 1, 0)
+	msg.Size = UDim2.new(1, -32, 1, -4)
 	msg.Font = Enum.Font.Gotham
 	msg.TextSize = 12
 	msg.TextXAlignment = Enum.TextXAlignment.Left
@@ -167,19 +173,35 @@ function DynamicUI:Notify(text, kind)
 	msg.ZIndex = 1003
 	msg.Parent = card
 
-	-- 进场动画
+	-- 进度条
+	local progress = Instance.new("Frame")
+	progress.Size = UDim2.new(1, 0, 0, 2)
+	progress.AnchorPoint = Vector2.new(0, 1)
+	progress.Position = UDim2.new(0, 0, 1, 0)
+	progress.BackgroundColor3 = accent
+	progress.BackgroundTransparency = 0.4
+	progress.BorderSizePixel = 0
+	progress.ZIndex = 1003
+	progress.Parent = card
+
 	tw(card, EASE_SPRING, {Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 0.02})
 	tw(strip, EASE_OUT, {Size = UDim2.new(0, 3, 1, -16)})
 	task.delay(0.1, function() tw(msg, EASE_OUT, {TextTransparency = 0}) end)
+	tw(progress, TweenInfo.new(duration, Enum.EasingStyle.Linear), {Size = UDim2.new(0, 0, 0, 2)})
 
-	task.delay(2.4, function()
-		if not card.Parent then return end
+	local closed = false
+	local function close()
+		if closed then return end
+		closed = true
 		tw(card, EASE_OUT, {Position = UDim2.fromOffset(40, 0), BackgroundTransparency = 1})
-		tw(msg,  EASE_OUT, {TextTransparency = 1})
+		tw(msg, EASE_OUT, {TextTransparency = 1})
 		tw(strip, EASE_OUT, {Size = UDim2.new(0, 0, 1, -16)})
 		task.wait(0.4)
 		if wrap.Parent then wrap:Destroy() end
-	end)
+	end
+
+	card.MouseButton1Click:Connect(close)
+	task.delay(duration, close)
 end
 
 ------------------------------------------------------------------
@@ -189,7 +211,7 @@ local function showLoader(gui, onDone)
 	local loader = Instance.new("Frame")
 	loader.AnchorPoint = Vector2.new(0.5, 0.5)
 	loader.Position = UDim2.fromScale(0.5, 0.5)
-	loader.Size = UDim2.fromOffset(280, 0)  -- 从 0 高度展开
+	loader.Size = UDim2.fromOffset(280, 0)
 	loader.BackgroundColor3 = Color3.fromRGB(252, 252, 253)
 	loader.BackgroundTransparency = 0.02
 	loader.BorderSizePixel = 0
@@ -241,8 +263,9 @@ local function showLoader(gui, onDone)
 	fill.ZIndex = 502
 	fill.Parent = back
 	corner(fill, UDim.new(1,0))
+	gradient(fill, Color3.fromRGB(120, 160, 240), Color3.fromRGB(86, 122, 200), 0)
 
-	-- 流光动画
+	-- 流光
 	local shine = Instance.new("Frame")
 	shine.Size = UDim2.new(0.3, 0, 1, 0)
 	shine.Position = UDim2.new(-0.3, 0, 0, 0)
@@ -291,7 +314,7 @@ local function showLoader(gui, onDone)
 end
 
 ------------------------------------------------------------------
--- 全窗口拖动
+-- 拖动
 ------------------------------------------------------------------
 local function makeDraggable(target, gui)
 	local dragging = false
@@ -306,7 +329,6 @@ local function makeDraggable(target, gui)
 		if i.UserInputType ~= Enum.UserInputType.MouseButton1
 		and i.UserInputType ~= Enum.UserInputType.Touch then return end
 
-		-- 点中按钮 / 滑条等就不拖
 		local objs = PlayerGui:GetGuiObjectsAtPosition(i.Position.X, i.Position.Y)
 		for _, o in ipairs(objs) do
 			if o ~= target and (o:IsA("TextButton") or o:IsA("ImageButton") or o:IsA("TextBox")) then
@@ -360,19 +382,19 @@ end)
 ------------------------------------------------------------------
 -- 涟漪
 ------------------------------------------------------------------
-local function ripple(parent, x, y)
+local function ripple(parent, x, y, color)
 	local r = Instance.new("Frame")
 	r.AnchorPoint = Vector2.new(0.5, 0.5)
 	r.Position = UDim2.fromOffset(x, y)
 	r.Size = UDim2.fromOffset(0, 0)
-	r.BackgroundColor3 = Color3.fromRGB(255,255,255)
+	r.BackgroundColor3 = color or Color3.fromRGB(255,255,255)
 	r.BackgroundTransparency = 0.6
 	r.BorderSizePixel = 0
 	r.ZIndex = (parent.ZIndex or 0) + 1
 	r.Parent = parent
 	corner(r, UDim.new(1,0))
 	tw(r, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {
-		Size = UDim2.fromOffset(160, 160),
+		Size = UDim2.fromOffset(180, 180),
 		BackgroundTransparency = 1,
 	})
 	task.delay(0.45, function() if r.Parent then r:Destroy() end end)
@@ -402,12 +424,28 @@ function DynamicUI:CreateWindow(opts)
 		TextSub     = Color3.fromRGB(112, 118, 134),
 		TextMuted   = Color3.fromRGB(160, 165, 178),
 		Accent      = Color3.fromRGB(86, 122, 200),
+		AccentBright= Color3.fromRGB(120, 160, 240),
 		AccentSoft  = Color3.fromRGB(232, 237, 248),
 		Track       = Color3.fromRGB(228, 230, 238),
 		BgDim       = 0.55,
 	}
 
 	local gui = ensureGui()
+
+	-- 背后柔光层
+	local glow = Instance.new("ImageLabel")
+	glow.AnchorPoint = Vector2.new(0.5, 0.5)
+	glow.Position = UDim2.new(0.5, 0, 0.5, 0)
+	glow.Size = UDim2.fromOffset(cfg.WindowSize.X.Offset + 80, cfg.WindowSize.Y.Offset + 80)
+	glow.BackgroundTransparency = 1
+	glow.Image = "rbxassetid://5028857084"
+	glow.ImageColor3 = T.Accent
+	glow.ImageTransparency = 0.85
+	glow.ScaleType = Enum.ScaleType.Slice
+	glow.SliceCenter = Rect.new(24,24,276,276)
+	glow.Visible = false
+	glow.ZIndex = 9
+	glow.Parent = gui
 
 	------------------------------------------------------------------
 	-- 主窗口
@@ -428,7 +466,6 @@ function DynamicUI:CreateWindow(opts)
 	corner(window, UDim.new(0, 14))
 	stroke(window, T.Border, 0.0, 1)
 
-	-- 缩放容器（用来做开窗放大动画）
 	local windowScale = Instance.new("UIScale")
 	windowScale.Scale = 0.9
 	windowScale.Parent = window
@@ -452,6 +489,24 @@ function DynamicUI:CreateWindow(opts)
 	topBar.ZIndex = 12
 	topBar.Parent = window
 
+	-- 顶栏流光
+	local topShine = Instance.new("Frame")
+	topShine.Size = UDim2.new(0.3, 0, 1, 0)
+	topShine.Position = UDim2.new(-0.3, 0, 0, 0)
+	topShine.BackgroundColor3 = T.AccentBright
+	topShine.BackgroundTransparency = 0.92
+	topShine.BorderSizePixel = 0
+	topShine.ZIndex = 11
+	topShine.Parent = topBar
+
+	task.spawn(function()
+		while topShine.Parent do
+			topShine.Position = UDim2.new(-0.3, 0, 0, 0)
+			tw(topShine, TweenInfo.new(2.5, Enum.EasingStyle.Sine), {Position = UDim2.new(1, 0, 0, 0)})
+			task.wait(5)
+		end
+	end)
+
 	local divider = Instance.new("Frame")
 	divider.Size = UDim2.new(1, -28, 0, 1)
 	divider.Position = UDim2.new(0, 14, 0, 43)
@@ -468,8 +523,8 @@ function DynamicUI:CreateWindow(opts)
 	iconBg.ZIndex = 13
 	iconBg.Parent = topBar
 	corner(iconBg, UDim.new(0, 5))
+	gradient(iconBg, T.AccentBright, T.Accent, 90)
 
-	-- 图标轻微旋转入场
 	iconBg.Rotation = -90
 	tw(iconBg, EASE_SPRING, {Rotation = 0})
 
@@ -500,7 +555,6 @@ function DynamicUI:CreateWindow(opts)
 	winTitle.ZIndex = 13
 	winTitle.Parent = topBar
 
-	-- 顶栏按钮 + hover 放大
 	local function makeBtn(symbol, color)
 		local b = Instance.new("TextButton")
 		b.Size = UDim2.fromOffset(20, 20)
@@ -517,7 +571,6 @@ function DynamicUI:CreateWindow(opts)
 		corner(b, UDim.new(1,0))
 
 		local sc = Instance.new("UIScale")
-		sc.Scale = 1
 		sc.Parent = b
 
 		b.MouseEnter:Connect(function()
@@ -556,6 +609,18 @@ function DynamicUI:CreateWindow(opts)
 	tabBar.Parent = window
 	corner(tabBar, UDim.new(0, 8))
 
+	-- 全局指示条（在 tabBar 上滑动）
+	local globalIndicator = Instance.new("Frame")
+	globalIndicator.AnchorPoint = Vector2.new(0, 1)
+	globalIndicator.Size = UDim2.fromOffset(0, 2)
+	globalIndicator.Position = UDim2.new(0, 0, 1, -3)
+	globalIndicator.BackgroundColor3 = T.Accent
+	globalIndicator.BorderSizePixel = 0
+	globalIndicator.ZIndex = 16
+	globalIndicator.Visible = false
+	globalIndicator.Parent = tabBar
+	corner(globalIndicator, UDim.new(1,0))
+
 	local tabScroll = Instance.new("ScrollingFrame")
 	tabScroll.Size = UDim2.fromScale(1,1)
 	tabScroll.BackgroundTransparency = 1
@@ -593,13 +658,16 @@ function DynamicUI:CreateWindow(opts)
 	corner(contentHolder, UDim.new(0, 10))
 	stroke(contentHolder, T.BorderSoft, 0.2, 1)
 
+	-- 浮层（在 gui 层，避免被裁剪）
 	local overlayLayer = Instance.new("Frame")
+	overlayLayer.Name = "OverlayLayer"
 	overlayLayer.Size = UDim2.fromScale(1,1)
+	overlayLayer.Position = UDim2.fromScale(0,0)
 	overlayLayer.BackgroundTransparency = 1
-	overlayLayer.ZIndex = 200
+	overlayLayer.ZIndex = 500
 	overlayLayer.ClipsDescendants = false
 	overlayLayer.Active = false
-	overlayLayer.Parent = window
+	overlayLayer.Parent = gui
 
 	------------------------------------------------------------------
 	-- 灵动岛
@@ -618,6 +686,12 @@ function DynamicUI:CreateWindow(opts)
 	island.Parent = gui
 	corner(island, UDim.new(1,0))
 	stroke(island, T.Border, 0.1, 1)
+
+	local islandScale = Instance.new("UIScale")
+	islandScale.Parent = island
+
+	island.MouseEnter:Connect(function() tw(islandScale, EASE_FAST, {Scale = 1.04}) end)
+	island.MouseLeave:Connect(function() tw(islandScale, EASE_FAST, {Scale = 1}) end)
 
 	local statusDot = Instance.new("Frame")
 	statusDot.Size = UDim2.fromOffset(8, 8)
@@ -681,17 +755,16 @@ function DynamicUI:CreateWindow(opts)
 	makeDraggable(island, gui)
 
 	------------------------------------------------------------------
-	-- 提前声明 Window，方便里面互相引用
+	-- Window 对象
 	------------------------------------------------------------------
 	local Window = {}
 	Window.tabs = {}
+	Window.tabOrder = {}
 	Window.current = nil
 	Window._dropdowns = {}
 
-	-- 声明 setMin（修复：原先用了全局变量，现在改成 local）
 	local setMin
 
-	-- 双击灵动岛恢复
 	local lastIslandClick = 0
 	island.InputBegan:Connect(function(i)
 		if i.UserInputType == Enum.UserInputType.MouseButton1
@@ -707,6 +780,17 @@ function DynamicUI:CreateWindow(opts)
 	------------------------------------------------------------------
 	-- Tab 切换
 	------------------------------------------------------------------
+	local function moveIndicator(btn)
+		if not btn then return end
+		globalIndicator.Visible = true
+		local pos = btn.AbsolutePosition.X - tabBar.AbsolutePosition.X
+		local size = btn.AbsoluteSize.X
+		tw(globalIndicator, EASE_OUT, {
+			Position = UDim2.new(0, pos + size/2 - 10, 1, -3),
+			Size = UDim2.fromOffset(20, 2),
+		})
+	end
+
 	local function switchTab(name)
 		if Window.current == name then return end
 
@@ -719,31 +803,30 @@ function DynamicUI:CreateWindow(opts)
 				BackgroundTransparency = active and 0 or 1,
 				TextColor3 = active and T.Text or T.TextSub,
 			})
-			tw(t.indicator, EASE_FAST, {
-				BackgroundTransparency = active and 0 or 1,
-				Size = active and UDim2.fromOffset(20, 2) or UDim2.fromOffset(0, 2),
-			})
 
 			if active then
+				moveIndicator(t.button)
 				t.page.Visible = true
-				t.page.Position = UDim2.new(0, 16, 0, 0)
-				-- 控件错峰淡入
+
 				for i, child in ipairs(t.page:GetChildren()) do
-					if child:IsA("Frame") or child:IsA("TextLabel") then
+					if (child:IsA("Frame") or child:IsA("TextLabel"))
+					and not child:IsA("UIListLayout")
+					and not child:IsA("UIPadding")
+					and not child:IsA("UICorner")
+					and not child:IsA("UIStroke") then
 						local origPos = child.Position
+						local origTrans = child:IsA("Frame") and child.BackgroundTransparency or 0
 						child.Position = origPos + UDim2.fromOffset(0, 8)
 						if child:IsA("Frame") then child.BackgroundTransparency = 1 end
-						local label = child:FindFirstChildOfClass("TextLabel")
 						task.delay((i-1) * 0.025, function()
 							if not child.Parent then return end
 							tw(child, EASE_OUT, {Position = origPos})
 							if child:IsA("Frame") then
-								tw(child, EASE_OUT, {BackgroundTransparency = 0})
+								tw(child, EASE_OUT, {BackgroundTransparency = origTrans})
 							end
 						end)
 					end
 				end
-				tw(t.page, EASE_OUT, {Position = UDim2.new(0, 0, 0, 0)})
 			else
 				t.page.Visible = false
 			end
@@ -769,17 +852,6 @@ function DynamicUI:CreateWindow(opts)
 		btn.Active = true
 		btn.Parent = tabScroll
 		corner(btn, UDim.new(0, 6))
-
-		local indicator = Instance.new("Frame")
-		indicator.AnchorPoint = Vector2.new(0.5, 1)
-		indicator.Position = UDim2.new(0.5, 0, 1, -3)
-		indicator.Size = UDim2.fromOffset(0, 2)
-		indicator.BackgroundColor3 = T.Accent
-		indicator.BackgroundTransparency = 1
-		indicator.BorderSizePixel = 0
-		indicator.ZIndex = 15
-		indicator.Parent = btn
-		corner(indicator, UDim.new(1,0))
 
 		local page = Instance.new("ScrollingFrame")
 		page.Size = UDim2.fromScale(1,1)
@@ -821,7 +893,8 @@ function DynamicUI:CreateWindow(opts)
 		end)
 		btn.MouseButton1Click:Connect(function() switchTab(name) end)
 
-		Window.tabs[name] = {button = btn, page = page, indicator = indicator}
+		Window.tabs[name] = {button = btn, page = page}
+		table.insert(Window.tabOrder, name)
 
 		local Tab = {}
 
@@ -840,10 +913,24 @@ function DynamicUI:CreateWindow(opts)
 			return r
 		end
 
+		function Tab:AddSection(text)
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Size = UDim2.new(1, 0, 0, 26)
+			l.Font = Enum.Font.GothamSemibold
+			l.TextSize = 13
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextColor3 = T.Text
+			l.Text = text
+			l.ZIndex = 14
+			l.Parent = page
+			return l
+		end
+
 		function Tab:AddLabel(text)
 			local l = Instance.new("TextLabel")
 			l.BackgroundTransparency = 1
-			l.Size = UDim2.new(1, 0, 0, 24)
+			l.Size = UDim2.new(1, 0, 0, 22)
 			l.Font = Enum.Font.GothamMedium
 			l.TextSize = 12
 			l.TextXAlignment = Enum.TextXAlignment.Left
@@ -851,7 +938,61 @@ function DynamicUI:CreateWindow(opts)
 			l.Text = text
 			l.ZIndex = 14
 			l.Parent = page
-			return l
+			local api = {}
+			function api:Set(t) l.Text = t end
+			return api
+		end
+
+		function Tab:AddParagraph(title, content)
+			local r = rowBase(0)
+			r.AutomaticSize = Enum.AutomaticSize.Y
+			r.Size = UDim2.new(1, 0, 0, 0)
+
+			local pp = Instance.new("UIPadding")
+			pp.PaddingTop = UDim.new(0, 10)
+			pp.PaddingBottom = UDim.new(0, 10)
+			pp.PaddingLeft = UDim.new(0, 12)
+			pp.PaddingRight = UDim.new(0, 12)
+			pp.Parent = r
+
+			local pl = Instance.new("UIListLayout")
+			pl.Padding = UDim.new(0, 4)
+			pl.Parent = r
+
+			local t = Instance.new("TextLabel")
+			t.BackgroundTransparency = 1
+			t.AutomaticSize = Enum.AutomaticSize.Y
+			t.Size = UDim2.new(1, 0, 0, 0)
+			t.Font = Enum.Font.GothamSemibold
+			t.TextSize = 13
+			t.TextXAlignment = Enum.TextXAlignment.Left
+			t.TextColor3 = T.Text
+			t.Text = title or ""
+			t.TextWrapped = true
+			t.ZIndex = 15
+			t.Parent = r
+
+			local c = Instance.new("TextLabel")
+			c.BackgroundTransparency = 1
+			c.AutomaticSize = Enum.AutomaticSize.Y
+			c.Size = UDim2.new(1, 0, 0, 0)
+			c.Font = Enum.Font.Gotham
+			c.TextSize = 12
+			c.TextXAlignment = Enum.TextXAlignment.Left
+			c.TextColor3 = T.TextSub
+			c.Text = content or ""
+			c.TextWrapped = true
+			c.ZIndex = 15
+			c.Parent = r
+		end
+
+		function Tab:AddDivider()
+			local d = Instance.new("Frame")
+			d.Size = UDim2.new(1, 0, 0, 1)
+			d.BackgroundColor3 = T.BorderSoft
+			d.BorderSizePixel = 0
+			d.ZIndex = 14
+			d.Parent = page
 		end
 
 		function Tab:AddButton(text, cb)
@@ -891,19 +1032,25 @@ function DynamicUI:CreateWindow(opts)
 
 			b.MouseEnter:Connect(function()
 				tw(r, EASE_FAST, {BackgroundColor3 = T.AccentSoft})
+				tw(l, EASE_FAST, {Position = UDim2.new(0, 14, 0, 0)})
 				tw(chev, EASE_FAST, {Position = UDim2.new(1, -8, 0.5, 0), TextColor3 = T.Accent})
 			end)
 			b.MouseLeave:Connect(function()
 				tw(r, EASE_FAST, {BackgroundColor3 = T.Surface})
+				tw(l, EASE_FAST, {Position = UDim2.new(0, 12, 0, 0)})
 				tw(chev, EASE_FAST, {Position = UDim2.new(1, -12, 0.5, 0), TextColor3 = T.TextMuted})
 			end)
 
 			b.MouseButton1Click:Connect(function()
 				local mp = UserInputService:GetMouseLocation()
 				local rel = mp - r.AbsolutePosition
-				ripple(r, rel.X, rel.Y - 36)
+				ripple(r, rel.X, rel.Y - 36, T.Accent)
 				if cb then task.spawn(cb) end
 			end)
+
+			local api = {}
+			function api:SetText(t) l.Text = t end
+			return api
 		end
 
 		function Tab:AddToggle(text, default, cb)
@@ -935,6 +1082,12 @@ function DynamicUI:CreateWindow(opts)
 			track.Parent = r
 			corner(track, UDim.new(1,0))
 
+			local glowEffect = Instance.new("UIStroke")
+			glowEffect.Color = T.Accent
+			glowEffect.Transparency = state and 0.5 or 1
+			glowEffect.Thickness = 3
+			glowEffect.Parent = track
+
 			local dot = Instance.new("Frame")
 			dot.Size = UDim2.fromOffset(16, 16)
 			dot.Position = state and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)
@@ -947,19 +1100,42 @@ function DynamicUI:CreateWindow(opts)
 			local dotScale = Instance.new("UIScale")
 			dotScale.Parent = dot
 
+			-- 呼吸辉光
+			task.spawn(function()
+				while track.Parent do
+					if state then
+						tw(glowEffect, TweenInfo.new(1.2, Enum.EasingStyle.Sine), {Transparency = 0.8})
+						task.wait(1.2)
+						tw(glowEffect, TweenInfo.new(1.2, Enum.EasingStyle.Sine), {Transparency = 0.5})
+						task.wait(1.2)
+					else
+						task.wait(0.3)
+					end
+				end
+			end)
+
 			track.MouseButton1Click:Connect(function()
 				state = not state
-				-- 弹簧动画
 				tw(dotScale, EASE_FAST, {Scale = 0.7})
 				task.delay(0.1, function() tw(dotScale, EASE_SPRING, {Scale = 1}) end)
 
 				tw(track, EASE_FAST, {BackgroundColor3 = state and T.Accent or T.Track})
+				tw(glowEffect, EASE_FAST, {Transparency = state and 0.5 or 1})
 				tw(dot, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
 					Position = state and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)
 				})
 				if cb then task.spawn(cb, state) end
 				DynamicUI:Notify((state and "已开启 · " or "已关闭 · ") .. text, state and "success" or "warn")
 			end)
+
+			local api = {}
+			function api:Set(s)
+				state = s and true or false
+				tw(track, EASE_FAST, {BackgroundColor3 = state and T.Accent or T.Track})
+				tw(dot, EASE_FAST, {Position = state and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)})
+			end
+			function api:Get() return state end
+			return api
 		end
 
 		function Tab:AddSlider(text, min, max, default, cb)
@@ -1008,6 +1184,7 @@ function DynamicUI:CreateWindow(opts)
 			fill.ZIndex = 17
 			fill.Parent = track
 			corner(fill, UDim.new(1,0))
+			gradient(fill, T.AccentBright, T.Accent, 0)
 
 			local thumb = Instance.new("Frame")
 			thumb.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -1029,6 +1206,13 @@ function DynamicUI:CreateWindow(opts)
 			hit.AutoButtonColor = false
 			hit.Active = true
 			hit.Parent = track
+
+			hit.MouseEnter:Connect(function() tw(thumb, EASE_FAST, {Size = UDim2.fromOffset(16, 16)}) end)
+			hit.MouseLeave:Connect(function()
+				if not (UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)) then
+					tw(thumb, EASE_FAST, {Size = UDim2.fromOffset(14, 14)})
+				end
+			end)
 
 			local dragging = false
 			local lastValue = default
@@ -1062,7 +1246,6 @@ function DynamicUI:CreateWindow(opts)
 				end
 			end)
 
-			-- RenderStepped 兜底
 			local conn2 = RunService.RenderStepped:Connect(function()
 				if dragging then
 					local mp = UserInputService:GetMouseLocation()
@@ -1080,11 +1263,23 @@ function DynamicUI:CreateWindow(opts)
 
 			r.AncestryChanged:Connect(function(_, parent)
 				if not parent then
-					conn1:Disconnect()
-					conn2:Disconnect()
-					conn3:Disconnect()
+					if conn1 then conn1:Disconnect() end
+					if conn2 then conn2:Disconnect() end
+					if conn3 then conn3:Disconnect() end
 				end
 			end)
+
+			local api = {}
+			function api:Set(v)
+				v = math.clamp(v, min, max)
+				lastValue = v
+				local rel = (v-min)/math.max(max-min,1)
+				fill.Size = UDim2.new(rel, 0, 1, 0)
+				thumb.Position = UDim2.new(rel, 0, 0.5, 0)
+				val.Text = tostring(v)
+			end
+			function api:Get() return lastValue end
+			return api
 		end
 
 		function Tab:AddDropdown(text, options, cb)
@@ -1184,8 +1379,6 @@ function DynamicUI:CreateWindow(opts)
 
 			local optBtns = {}
 			local opened = false
-
-			-- 关键修复：先声明，再使用
 			local closeDropdown
 			local openDropdown
 
@@ -1193,35 +1386,52 @@ function DynamicUI:CreateWindow(opts)
 				if not opened then return end
 				opened = false
 				tw(arrow, EASE_FAST, {Rotation = 0})
-				tw(panel, EASE_FAST, {BackgroundTransparency = 1, Size = UDim2.fromOffset(panel.AbsoluteSize.X, 0)})
+				if panel and panel.Parent then
+					tw(panel, EASE_FAST, {
+						BackgroundTransparency = 1,
+						Size = UDim2.fromOffset(panel.AbsoluteSize.X, 0)
+					})
+				end
 				task.delay(0.16, function()
-					if not opened and panel.Parent then panel.Visible = false end
+					if not opened and panel and panel.Parent then panel.Visible = false end
 				end)
 			end
 
 			openDropdown = function()
 				if opened then return end
 				opened = true
+
 				local pickAbs = pick.AbsolutePosition
-				local winAbs = window.AbsolutePosition
-				local relX = pickAbs.X - winAbs.X
-				local relY = pickAbs.Y - winAbs.Y + pick.AbsoluteSize.Y + 4
+				local pickSize = pick.AbsoluteSize
+				local screenSize = gui.AbsoluteSize
 				local h = math.min(#options * 28 + 8, 160)
-				panel.Position = UDim2.fromOffset(relX, relY)
-				panel.Size = UDim2.fromOffset(pick.AbsoluteSize.X, 0)
+
+				local spaceBelow = screenSize.Y - (pickAbs.Y + pickSize.Y)
+				local spaceAbove = pickAbs.Y
+				local openUp = spaceBelow < h + 10 and spaceAbove > spaceBelow
+
+				local px = pickAbs.X
+				local py = openUp and (pickAbs.Y - h - 4) or (pickAbs.Y + pickSize.Y + 4)
+
+				px = math.clamp(px, 4, screenSize.X - pickSize.X - 4)
+
+				panel.Position = UDim2.fromOffset(px, py)
+				panel.Size = UDim2.fromOffset(pickSize.X, 0)
 				panel.BackgroundTransparency = 1
 				panel.Visible = true
-				tw(panel, EASE_OUT, {BackgroundTransparency = 0, Size = UDim2.fromOffset(pick.AbsoluteSize.X, h)})
-				tw(arrow, EASE_FAST, {Rotation = 180})
 
-				-- 选项级联
+				tw(panel, EASE_OUT, {
+					BackgroundTransparency = 0,
+					Size = UDim2.fromOffset(pickSize.X, h)
+				})
+				arrow.Text = openUp and "▴" or "▾"
+
 				for i, ob in ipairs(optBtns) do
-					ob.btn.BackgroundTransparency = 1
 					local lbl = ob.btn:FindFirstChild("OptLabel")
 					if lbl then lbl.TextTransparency = 1 end
 					task.delay((i-1) * 0.03, function()
-						if ob.btn.Parent then
-							if lbl then tw(lbl, EASE_FAST, {TextTransparency = 0}) end
+						if ob.btn.Parent and lbl then
+							tw(lbl, EASE_FAST, {TextTransparency = 0})
 						end
 					end)
 				end
@@ -1290,6 +1500,7 @@ function DynamicUI:CreateWindow(opts)
 
 			table.insert(globalClickListeners, function(i)
 				if not opened then return end
+				if not panel.Parent then return end
 				local ax, ay = i.Position.X, i.Position.Y
 				local p1 = panel.AbsolutePosition
 				local p2 = p1 + panel.AbsoluteSize
@@ -1303,9 +1514,245 @@ function DynamicUI:CreateWindow(opts)
 			end)
 
 			table.insert(Window._dropdowns, closeDropdown)
+
+			local api = {}
+			function api:Set(v)
+				current = v
+				pickLabel.Text = v
+				for _, ob in ipairs(optBtns) do
+					ob.check.Text = (ob.opt == v) and "✓" or ""
+				end
+			end
+			function api:Get() return current end
+			return api
 		end
 
-		if not Window.current then switchTab(name) end
+		function Tab:AddInput(text, placeholder, cb)
+			local r = rowBase(40)
+
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Position = UDim2.new(0, 12, 0, 0)
+			l.Size = UDim2.new(0.4, 0, 1, 0)
+			l.Font = Enum.Font.Gotham
+			l.TextSize = 12
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextColor3 = T.Text
+			l.Text = text
+			l.ZIndex = 16
+			l.Parent = r
+
+			local box = Instance.new("TextBox")
+			box.AnchorPoint = Vector2.new(1, 0.5)
+			box.Position = UDim2.new(1, -12, 0.5, 0)
+			box.Size = UDim2.fromOffset(160, 26)
+			box.BackgroundColor3 = T.SurfaceAlt
+			box.BorderSizePixel = 0
+			box.Font = Enum.Font.Gotham
+			box.TextSize = 12
+			box.TextColor3 = T.Text
+			box.PlaceholderText = placeholder or ""
+			box.PlaceholderColor3 = T.TextMuted
+			box.Text = ""
+			box.ClearTextOnFocus = false
+			box.ZIndex = 16
+			box.Parent = r
+			corner(box, UDim.new(0, 6))
+			stroke(box, T.Border, 0.2, 1)
+
+			local pad = Instance.new("UIPadding")
+			pad.PaddingLeft = UDim.new(0, 8)
+			pad.PaddingRight = UDim.new(0, 8)
+			pad.Parent = box
+
+			box.Focused:Connect(function()
+				tw(box, EASE_FAST, {BackgroundColor3 = T.AccentSoft})
+			end)
+			box.FocusLost:Connect(function()
+				tw(box, EASE_FAST, {BackgroundColor3 = T.SurfaceAlt})
+				if cb then task.spawn(cb, box.Text) end
+			end)
+
+			local api = {}
+			function api:Set(t) box.Text = t end
+			function api:Get() return box.Text end
+			return api
+		end
+
+		function Tab:AddKeybind(text, defaultKey, cb)
+			local r = rowBase(40)
+			local key = defaultKey
+			local listening = false
+
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Position = UDim2.new(0, 12, 0, 0)
+			l.Size = UDim2.new(1, -100, 1, 0)
+			l.Font = Enum.Font.Gotham
+			l.TextSize = 12
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextColor3 = T.Text
+			l.Text = text
+			l.ZIndex = 16
+			l.Parent = r
+
+			local btn = Instance.new("TextButton")
+			btn.AnchorPoint = Vector2.new(1, 0.5)
+			btn.Position = UDim2.new(1, -12, 0.5, 0)
+			btn.Size = UDim2.fromOffset(76, 26)
+			btn.BackgroundColor3 = T.SurfaceAlt
+			btn.BorderSizePixel = 0
+			btn.AutoButtonColor = false
+			btn.Font = Enum.Font.GothamSemibold
+			btn.TextSize = 11
+			btn.TextColor3 = T.Text
+			btn.Text = key and key.Name or "未绑定"
+			btn.ZIndex = 16
+			btn.Active = true
+			btn.Parent = r
+			corner(btn, UDim.new(0, 6))
+			stroke(btn, T.Border, 0.2, 1)
+
+			btn.MouseButton1Click:Connect(function()
+				listening = true
+				btn.Text = "按下按键..."
+				tw(btn, EASE_FAST, {BackgroundColor3 = T.AccentSoft})
+			end)
+
+			UserInputService.InputBegan:Connect(function(input, gp)
+				if listening and input.UserInputType == Enum.UserInputType.Keyboard then
+					listening = false
+					key = input.KeyCode
+					btn.Text = key.Name
+					tw(btn, EASE_FAST, {BackgroundColor3 = T.SurfaceAlt})
+				elseif key and not gp and not listening
+					and input.UserInputType == Enum.UserInputType.Keyboard
+					and input.KeyCode == key then
+					if cb then task.spawn(cb) end
+				end
+			end)
+
+			local api = {}
+			function api:Set(k) key = k; btn.Text = k.Name end
+			function api:Get() return key end
+			return api
+		end
+
+		function Tab:AddColorPicker(text, defaultColor, cb)
+			local color = defaultColor or Color3.fromRGB(255,255,255)
+			local r = rowBase(40)
+
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Position = UDim2.new(0, 12, 0, 0)
+			l.Size = UDim2.new(1, -60, 1, 0)
+			l.Font = Enum.Font.Gotham
+			l.TextSize = 12
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextColor3 = T.Text
+			l.Text = text
+			l.ZIndex = 16
+			l.Parent = r
+
+			local swatch = Instance.new("TextButton")
+			swatch.AnchorPoint = Vector2.new(1, 0.5)
+			swatch.Position = UDim2.new(1, -12, 0.5, 0)
+			swatch.Size = UDim2.fromOffset(36, 22)
+			swatch.BackgroundColor3 = color
+			swatch.BorderSizePixel = 0
+			swatch.AutoButtonColor = false
+			swatch.Text = ""
+			swatch.ZIndex = 16
+			swatch.Active = true
+			swatch.Parent = r
+			corner(swatch, UDim.new(0, 6))
+			stroke(swatch, T.Border, 0.2, 1)
+
+			-- 简易颜色选择浮层
+			local pickerOpen = false
+			local picker = Instance.new("Frame")
+			picker.Size = UDim2.fromOffset(180, 80)
+			picker.BackgroundColor3 = T.Surface
+			picker.BorderSizePixel = 0
+			picker.Visible = false
+			picker.ZIndex = 230
+			picker.Active = true
+			picker.Parent = overlayLayer
+			corner(picker, UDim.new(0, 8))
+			stroke(picker, T.Border, 0.1, 1)
+
+			local presets = {
+				Color3.fromRGB(255,80,80), Color3.fromRGB(255,160,80), Color3.fromRGB(255,220,80),
+				Color3.fromRGB(80,200,120), Color3.fromRGB(80,180,255), Color3.fromRGB(160,80,255),
+				Color3.fromRGB(255,80,180), Color3.fromRGB(40,40,50),  Color3.fromRGB(255,255,255),
+			}
+			local grid = Instance.new("UIGridLayout")
+			grid.CellSize = UDim2.fromOffset(36, 28)
+			grid.CellPadding = UDim2.fromOffset(6, 6)
+			grid.Parent = picker
+			local pp = Instance.new("UIPadding")
+			pp.PaddingTop = UDim.new(0, 12)
+			pp.PaddingLeft = UDim.new(0, 12)
+			pp.Parent = picker
+
+			for _, c in ipairs(presets) do
+				local cb2 = Instance.new("TextButton")
+				cb2.BackgroundColor3 = c
+				cb2.BorderSizePixel = 0
+				cb2.AutoButtonColor = false
+				cb2.Text = ""
+				cb2.ZIndex = 231
+				cb2.Parent = picker
+				corner(cb2, UDim.new(0, 5))
+				stroke(cb2, T.Border, 0.4, 1)
+				cb2.MouseButton1Click:Connect(function()
+					color = c
+					swatch.BackgroundColor3 = c
+					if cb then task.spawn(cb, c) end
+					pickerOpen = false
+					picker.Visible = false
+				end)
+			end
+
+			swatch.MouseButton1Click:Connect(function()
+				pickerOpen = not pickerOpen
+				if pickerOpen then
+					local sa = swatch.AbsolutePosition
+					picker.Position = UDim2.fromOffset(sa.X - 144, sa.Y + swatch.AbsoluteSize.Y + 4)
+					picker.Visible = true
+				else
+					picker.Visible = false
+				end
+			end)
+
+			table.insert(globalClickListeners, function(i)
+				if not pickerOpen then return end
+				local ax, ay = i.Position.X, i.Position.Y
+				local p1 = picker.AbsolutePosition
+				local p2 = p1 + picker.AbsoluteSize
+				local k1 = swatch.AbsolutePosition
+				local k2 = k1 + swatch.AbsoluteSize
+				local inP = ax >= p1.X and ax <= p2.X and ay >= p1.Y and ay <= p2.Y
+				local inK = ax >= k1.X and ax <= k2.X and ay >= k1.Y and ay <= k2.Y
+				if not inP and not inK then
+					pickerOpen = false
+					picker.Visible = false
+				end
+			end)
+
+			local api = {}
+			function api:Set(c) color = c; swatch.BackgroundColor3 = c end
+			function api:Get() return color end
+			return api
+		end
+
+		if not Window.current then
+			task.delay(0.05, function()
+				switchTab(name)
+				task.wait(0.1)
+				moveIndicator(btn)
+			end)
+		end
 		return Tab
 	end
 
@@ -1323,14 +1770,20 @@ function DynamicUI:CreateWindow(opts)
 
 	function Window:Show()
 		window.Visible = true
+		glow.Visible = true
 		tw(windowScale, EASE_SPRING, {Scale = 1})
 		tw(window, EASE_OUT, {BackgroundTransparency = 0})
+		tw(glow, EASE_OUT, {ImageTransparency = 0.85})
 	end
 
 	function Window:Hide()
 		tw(windowScale, EASE_FAST, {Scale = 0.9})
 		tw(window, EASE_OUT, {BackgroundTransparency = 1})
-		task.delay(0.3, function() if window.Parent then window.Visible = false end end)
+		tw(glow, EASE_OUT, {ImageTransparency = 1})
+		task.delay(0.3, function()
+			if window.Parent then window.Visible = false end
+			glow.Visible = false
+		end)
 	end
 
 	function Window:SetWindowVisible(state)
@@ -1341,9 +1794,19 @@ function DynamicUI:CreateWindow(opts)
 		if window.Visible then self:Hide() else self:Show() end
 	end
 
+	function Window:Bind(keycode)
+		UserInputService.InputBegan:Connect(function(input, gp)
+			if not gp and input.KeyCode == keycode then
+				self:Toggle()
+			end
+		end)
+	end
+
 	function Window:Destroy()
 		if window.Parent then window:Destroy() end
 		if island.Parent then island:Destroy() end
+		if overlayLayer.Parent then overlayLayer:Destroy() end
+		if glow.Parent then glow:Destroy() end
 	end
 
 	------------------------------------------------------------------
@@ -1355,8 +1818,14 @@ function DynamicUI:CreateWindow(opts)
 		if s then
 			tw(windowScale, EASE_FAST, {Scale = 0.85})
 			tw(window, EASE_OUT, {BackgroundTransparency = 1})
+			tw(glow, EASE_OUT, {ImageTransparency = 1})
 			if bgImage then tw(bgImage, EASE_OUT, {ImageTransparency = 1}) end
-			task.delay(0.3, function() if minimized and window.Parent then window.Visible = false end end)
+			task.delay(0.3, function()
+				if minimized and window.Parent then
+					window.Visible = false
+					glow.Visible = false
+				end
+			end)
 
 			island.Visible = true
 			island.Size = UDim2.fromOffset(40, 40)
@@ -1364,10 +1833,12 @@ function DynamicUI:CreateWindow(opts)
 			tw(island, EASE_SPRING, {Size = cfg.IslandSize, BackgroundTransparency = 0.02})
 		else
 			window.Visible = true
+			glow.Visible = true
 			windowScale.Scale = 0.85
 			window.BackgroundTransparency = 1
 			tw(windowScale, EASE_SPRING, {Scale = 1})
 			tw(window, EASE_OUT, {BackgroundTransparency = 0})
+			tw(glow, EASE_OUT, {ImageTransparency = 0.85})
 			if bgImage then tw(bgImage, EASE_OUT, {ImageTransparency = T.BgDim}) end
 
 			tw(island, EASE_OUT, {Size = UDim2.fromOffset(40, 40), BackgroundTransparency = 1})
@@ -1380,21 +1851,32 @@ function DynamicUI:CreateWindow(opts)
 	btnClose.MouseButton1Click:Connect(function()
 		tw(windowScale, EASE_FAST, {Scale = 0.7})
 		tw(window, EASE_OUT, {BackgroundTransparency = 1})
+		tw(glow, EASE_OUT, {ImageTransparency = 1})
 		tw(island, EASE_OUT, {Size = UDim2.fromOffset(0,0), BackgroundTransparency = 1})
 		task.wait(0.36)
 		Window:Destroy()
 	end)
 
+	-- glow 跟随窗口
+	RunService.RenderStepped:Connect(function()
+		if glow.Parent and window.Parent and window.Visible then
+			glow.Position = window.Position
+		end
+	end)
+
 	------------------------------------------------------------------
-	-- 加载 → 弹出（带缩放 + 淡入）
+	-- 加载 → 弹出
 	------------------------------------------------------------------
 	showLoader(gui, function()
 		window.Position = UDim2.new(0.5, 0, 0.5, 0)
 		window.BackgroundTransparency = 1
 		windowScale.Scale = 0.85
 		window.Visible = true
+		glow.Visible = true
+		glow.ImageTransparency = 1
 		tw(windowScale, EASE_SPRING, {Scale = 1})
 		tw(window, EASE_OUT, {BackgroundTransparency = 0})
+		tw(glow, EASE_SLOW, {ImageTransparency = 0.85})
 		if bgImage then tw(bgImage, EASE_OUT, {ImageTransparency = T.BgDim}) end
 		task.wait()
 		clampPosition(window, gui.AbsoluteSize)

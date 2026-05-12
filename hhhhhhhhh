@@ -1,1 +1,2141 @@
+local Players          = game:GetService("Players")
+local TweenService     = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService       = game:GetService("RunService")
 
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+
+local DynamicUI = {}
+DynamicUI.Version = "3.1"
+
+------------------------------------------------------------------
+-- 资源
+------------------------------------------------------------------
+local ASSETS = {
+	GLOW_SQUARE = "rbxassetid://5028857084",
+	GLOW_CIRCLE = "rbxassetid://4998524388",
+	RING        = "rbxassetid://5634540979",
+	NOISE       = "rbxassetid://9263829409",
+	SPARKLE     = "rbxassetid://1283791512",
+}
+
+------------------------------------------------------------------
+-- 缓动
+------------------------------------------------------------------
+local EASE_OUT    = TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local EASE_FAST   = TweenInfo.new(0.14, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local EASE_SPRING = TweenInfo.new(0.45, Enum.EasingStyle.Back,  Enum.EasingDirection.Out)
+local EASE_SLOW   = TweenInfo.new(0.6,  Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+
+------------------------------------------------------------------
+-- 主题
+------------------------------------------------------------------
+local THEMES = {
+	深紫 = {
+		Bg=Color3.fromRGB(14,14,22), BgDeep=Color3.fromRGB(8,8,14),
+		Surface=Color3.fromRGB(24,24,34), SurfaceAlt=Color3.fromRGB(32,32,46),
+		SurfaceHover=Color3.fromRGB(42,42,60),
+		Border=Color3.fromRGB(55,55,75), BorderSoft=Color3.fromRGB(38,38,54),
+		Text=Color3.fromRGB(240,240,248), TextSub=Color3.fromRGB(165,168,185),
+		TextMuted=Color3.fromRGB(105,108,125),
+		Accent=Color3.fromRGB(140,100,255), AccentSoft=Color3.fromRGB(40,30,70),
+		Track=Color3.fromRGB(40,40,55),
+	},
+	纯黑 = {
+		Bg=Color3.fromRGB(10,10,10), BgDeep=Color3.fromRGB(0,0,0),
+		Surface=Color3.fromRGB(20,20,20), SurfaceAlt=Color3.fromRGB(28,28,28),
+		SurfaceHover=Color3.fromRGB(38,38,38),
+		Border=Color3.fromRGB(50,50,50), BorderSoft=Color3.fromRGB(32,32,32),
+		Text=Color3.fromRGB(245,245,245), TextSub=Color3.fromRGB(160,160,160),
+		TextMuted=Color3.fromRGB(100,100,100),
+		Accent=Color3.fromRGB(255,80,180), AccentSoft=Color3.fromRGB(60,20,40),
+		Track=Color3.fromRGB(38,38,38),
+	},
+	午夜蓝 = {
+		Bg=Color3.fromRGB(12,18,32), BgDeep=Color3.fromRGB(6,10,20),
+		Surface=Color3.fromRGB(20,28,46), SurfaceAlt=Color3.fromRGB(28,38,60),
+		SurfaceHover=Color3.fromRGB(38,50,75),
+		Border=Color3.fromRGB(50,70,100), BorderSoft=Color3.fromRGB(34,46,68),
+		Text=Color3.fromRGB(235,242,255), TextSub=Color3.fromRGB(155,170,200),
+		TextMuted=Color3.fromRGB(95,110,140),
+		Accent=Color3.fromRGB(80,170,255), AccentSoft=Color3.fromRGB(25,50,90),
+		Track=Color3.fromRGB(35,48,72),
+	},
+	血色 = {
+		Bg=Color3.fromRGB(22,12,12), BgDeep=Color3.fromRGB(12,4,4),
+		Surface=Color3.fromRGB(34,18,20), SurfaceAlt=Color3.fromRGB(50,26,30),
+		SurfaceHover=Color3.fromRGB(65,34,38),
+		Border=Color3.fromRGB(85,40,45), BorderSoft=Color3.fromRGB(45,22,26),
+		Text=Color3.fromRGB(250,235,235), TextSub=Color3.fromRGB(200,160,160),
+		TextMuted=Color3.fromRGB(140,100,100),
+		Accent=Color3.fromRGB(240,60,80), AccentSoft=Color3.fromRGB(80,20,30),
+		Track=Color3.fromRGB(55,28,32),
+	},
+	翡翠 = {
+		Bg=Color3.fromRGB(10,22,18), BgDeep=Color3.fromRGB(4,12,10),
+		Surface=Color3.fromRGB(18,34,28), SurfaceAlt=Color3.fromRGB(26,48,40),
+		SurfaceHover=Color3.fromRGB(34,62,52),
+		Border=Color3.fromRGB(50,90,75), BorderSoft=Color3.fromRGB(30,52,42),
+		Text=Color3.fromRGB(235,250,245), TextSub=Color3.fromRGB(155,200,180),
+		TextMuted=Color3.fromRGB(95,135,120),
+		Accent=Color3.fromRGB(60,220,150), AccentSoft=Color3.fromRGB(20,70,50),
+		Track=Color3.fromRGB(34,58,48),
+	},
+}
+
+------------------------------------------------------------------
+-- 工具
+------------------------------------------------------------------
+local function tw(obj, info, props)
+	if not obj or not obj.Parent then return end
+	local t = TweenService:Create(obj, info, props); t:Play(); return t
+end
+
+local function corner(p, r)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = r or UDim.new(0, 10)
+	c.Parent = p; return c
+end
+
+local function stroke(p, color, trans, thick)
+	local s = Instance.new("UIStroke")
+	s.Color = color or Color3.fromRGB(80,80,100)
+	s.Transparency = trans or 0.3
+	s.Thickness = thick or 1
+	s.Parent = p; return s
+end
+
+-- 全局彩虹色管理：所有彩虹边框共用一个旋转值,统一同步
+local RAINBOW = {
+	rotation = 0,
+	gradients = {},  -- 已注册的渐变实例
+}
+
+local function makeRainbowSequence()
+	return ColorSequence.new({
+		ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 80, 180)),
+		ColorSequenceKeypoint.new(0.20, Color3.fromRGB(180, 100, 255)),
+		ColorSequenceKeypoint.new(0.40, Color3.fromRGB(80, 180, 255)),
+		ColorSequenceKeypoint.new(0.60, Color3.fromRGB(80, 255, 180)),
+		ColorSequenceKeypoint.new(0.80, Color3.fromRGB(255, 220, 80)),
+		ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 80, 180)),
+	})
+end
+
+-- 关键：真·彩虹流光边框
+local function rainbowBorder(parent, thickness, transparency)
+	local s = Instance.new("UIStroke")
+	s.Thickness = thickness or 1.8
+	s.Transparency = transparency or 0
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	s.LineJoinMode = Enum.LineJoinMode.Round
+	s.Parent = parent
+
+	local g = Instance.new("UIGradient")
+	g.Color = makeRainbowSequence()
+	g.Rotation = RAINBOW.rotation
+	g.Parent = s
+
+	table.insert(RAINBOW.gradients, g)
+	return s, g
+end
+
+-- 全局旋转驱动（只跑一次）
+task.spawn(function()
+	while true do
+		RAINBOW.rotation = (RAINBOW.rotation + 1.2) % 360
+		-- 清理已销毁的
+		for i = #RAINBOW.gradients, 1, -1 do
+			local g = RAINBOW.gradients[i]
+			if not g.Parent then
+				table.remove(RAINBOW.gradients, i)
+			else
+				g.Rotation = RAINBOW.rotation
+			end
+		end
+		task.wait()
+	end
+end)
+
+-- 彩虹文字色
+local function rainbowText(label)
+	local g = Instance.new("UIGradient")
+	g.Color = makeRainbowSequence()
+	g.Rotation = 0
+	g.Parent = label
+	table.insert(RAINBOW.gradients, g)
+	return g
+end
+
+local function clampPosition(target, screenSize)
+	if not target or not target.Parent then return end
+	local absSize = target.AbsoluteSize
+	local pos     = target.Position
+	local anchor  = target.AnchorPoint
+	local pxX = pos.X.Scale * screenSize.X + pos.X.Offset - anchor.X * absSize.X
+	local pxY = pos.Y.Scale * screenSize.Y + pos.Y.Offset - anchor.Y * absSize.Y
+	local maxX = math.max(0, screenSize.X - absSize.X)
+	local maxY = math.max(0, screenSize.Y - absSize.Y)
+	target.Position = UDim2.new(
+		0, math.clamp(pxX, 0, maxX) + anchor.X * absSize.X,
+		0, math.clamp(pxY, 0, maxY) + anchor.Y * absSize.Y
+	)
+end
+
+local function ensureGui()
+	local g = PlayerGui:FindFirstChild("DynamicUI_Root")
+	if g then return g end
+	g = Instance.new("ScreenGui")
+	g.Name = "DynamicUI_Root"
+	g.IgnoreGuiInset = true
+	g.ResetOnSpawn = false
+	g.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	g.DisplayOrder = 100
+	g.Parent = PlayerGui
+	return g
+end
+
+------------------------------------------------------------------
+-- 通知
+------------------------------------------------------------------
+local function ensureNotifyHolder(gui)
+	local h = gui:FindFirstChild("通知容器")
+	if h then return h end
+	h = Instance.new("Frame")
+	h.Name = "通知容器"
+	h.AnchorPoint = Vector2.new(1, 1)
+	h.Position = UDim2.new(1, -18, 1, -18)
+	h.Size = UDim2.fromOffset(290, 600)
+	h.BackgroundTransparency = 1
+	h.ZIndex = 1000
+	h.Parent = gui
+	local list = Instance.new("UIListLayout")
+	list.FillDirection = Enum.FillDirection.Vertical
+	list.VerticalAlignment = Enum.VerticalAlignment.Bottom
+	list.HorizontalAlignment = Enum.HorizontalAlignment.Right
+	list.Padding = UDim.new(0, 8)
+	list.Parent = h
+	return h
+end
+
+function DynamicUI:Notify(text, kind, duration)
+	kind = kind or "info"
+	duration = duration or 2.6
+	local gui = ensureGui()
+	local holder = ensureNotifyHolder(gui)
+
+	local colors = {
+		success = Color3.fromRGB(80,220,140),
+		warn    = Color3.fromRGB(245,180,70),
+		error   = Color3.fromRGB(240,90,90),
+		info    = Color3.fromRGB(140,100,255),
+	}
+	local accent = colors[kind] or colors.info
+
+	local wrap = Instance.new("Frame")
+	wrap.Size = UDim2.fromOffset(270, 60)
+	wrap.BackgroundTransparency = 1
+	wrap.ZIndex = 1001
+	wrap.Parent = holder
+
+	local card = Instance.new("TextButton")
+	card.AutoButtonColor = false
+	card.Text = ""
+	card.Position = UDim2.fromOffset(80, 0)
+	card.Size = UDim2.fromOffset(270, 56)
+	card.BackgroundColor3 = Color3.fromRGB(24,24,34)
+	card.BackgroundTransparency = 1
+	card.BorderSizePixel = 0
+	card.ZIndex = 1001
+	card.Parent = wrap
+	corner(card, UDim.new(0, 10))
+
+	if kind == "rainbow" then
+		rainbowBorder(card, 1.5, 0)
+	else
+		stroke(card, accent, 0.3, 1.2)
+	end
+
+	local strip = Instance.new("Frame")
+	strip.Size = UDim2.new(0, 0, 1, -18)
+	strip.Position = UDim2.new(0, 10, 0, 9)
+	strip.BackgroundColor3 = accent
+	strip.BorderSizePixel = 0
+	strip.ZIndex = 1002
+	strip.Parent = card
+	corner(strip, UDim.new(1,0))
+
+	local iconBg = Instance.new("Frame")
+	iconBg.BackgroundColor3 = accent
+	iconBg.BackgroundTransparency = 0.85
+	iconBg.Position = UDim2.new(0, 20, 0.5, -12)
+	iconBg.Size = UDim2.fromOffset(24, 24)
+	iconBg.BorderSizePixel = 0
+	iconBg.ZIndex = 1002
+	iconBg.Parent = card
+	corner(iconBg, UDim.new(0, 6))
+
+	local icon = Instance.new("TextLabel")
+	icon.BackgroundTransparency = 1
+	icon.Size = UDim2.fromScale(1,1)
+	icon.Font = Enum.Font.GothamBold
+	icon.TextSize = 13
+	icon.TextColor3 = accent
+	icon.Text = ({success="✓",warn="!",error="✕",info="i",rainbow="✦"})[kind] or "i"
+	icon.ZIndex = 1003
+	icon.Parent = iconBg
+
+	local msg = Instance.new("TextLabel")
+	msg.BackgroundTransparency = 1
+	msg.Position = UDim2.new(0, 54, 0, 0)
+	msg.Size = UDim2.new(1, -64, 1, -6)
+	msg.Font = Enum.Font.GothamMedium
+	msg.TextSize = 12
+	msg.TextXAlignment = Enum.TextXAlignment.Left
+	msg.TextColor3 = Color3.fromRGB(240,240,248)
+	msg.TextTransparency = 1
+	msg.Text = text
+	msg.TextWrapped = true
+	msg.ZIndex = 1003
+	msg.Parent = card
+
+	local progress = Instance.new("Frame")
+	progress.Size = UDim2.new(1, 0, 0, 2)
+	progress.AnchorPoint = Vector2.new(0, 1)
+	progress.Position = UDim2.new(0, 0, 1, 0)
+	progress.BackgroundColor3 = accent
+	progress.BackgroundTransparency = 0.3
+	progress.BorderSizePixel = 0
+	progress.ZIndex = 1003
+	progress.Parent = card
+
+	tw(card, EASE_SPRING, {Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 0.05})
+	tw(strip, EASE_OUT, {Size = UDim2.new(0, 3, 1, -18)})
+	task.delay(0.1, function() tw(msg, EASE_OUT, {TextTransparency = 0}) end)
+	tw(progress, TweenInfo.new(duration, Enum.EasingStyle.Linear), {Size = UDim2.new(0, 0, 0, 2)})
+
+	local closed = false
+	local function close()
+		if closed then return end
+		closed = true
+		tw(card, EASE_OUT, {Position = UDim2.fromOffset(80, 0), BackgroundTransparency = 1})
+		tw(msg, EASE_OUT, {TextTransparency = 1})
+		task.wait(0.4)
+		if wrap.Parent then wrap:Destroy() end
+	end
+	card.MouseButton1Click:Connect(close)
+	task.delay(duration, close)
+end
+
+------------------------------------------------------------------
+-- 加载条
+------------------------------------------------------------------
+local function showLoader(gui, accent, onDone)
+	local loader = Instance.new("Frame")
+	loader.AnchorPoint = Vector2.new(0.5, 0.5)
+	loader.Position = UDim2.fromScale(0.5, 0.5)
+	loader.Size = UDim2.fromOffset(320, 0)
+	loader.BackgroundColor3 = Color3.fromRGB(24,24,34)
+	loader.BackgroundTransparency = 0.05
+	loader.BorderSizePixel = 0
+	loader.ZIndex = 500
+	loader.ClipsDescendants = true
+	loader.Parent = gui
+	corner(loader, UDim.new(0, 14))
+	rainbowBorder(loader, 1.5, 0)
+	tw(loader, EASE_SPRING, {Size = UDim2.fromOffset(320, 80)})
+
+	local ring = Instance.new("ImageLabel")
+	ring.Size = UDim2.fromOffset(32, 32)
+	ring.Position = UDim2.new(0, 16, 0.5, -16)
+	ring.BackgroundTransparency = 1
+	ring.Image = ASSETS.RING
+	ring.ImageColor3 = accent
+	ring.ZIndex = 501
+	ring.Parent = loader
+	task.spawn(function()
+		while ring.Parent do
+			ring.Rotation = (ring.Rotation + 6) % 360
+			task.wait()
+		end
+	end)
+
+	local title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Position = UDim2.new(0, 60, 0, 14)
+	title.Size = UDim2.new(1, -120, 0, 18)
+	title.Font = Enum.Font.GothamBold
+	title.TextSize = 13
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.TextColor3 = Color3.fromRGB(240,240,248)
+	title.Text = "正在加载"
+	title.ZIndex = 501
+	title.Parent = loader
+
+	local pct = Instance.new("TextLabel")
+	pct.BackgroundTransparency = 1
+	pct.Position = UDim2.new(1, -60, 0, 14)
+	pct.Size = UDim2.fromOffset(44, 18)
+	pct.Font = Enum.Font.GothamBold
+	pct.TextSize = 13
+	pct.TextXAlignment = Enum.TextXAlignment.Right
+	pct.TextColor3 = accent
+	pct.Text = "0%"
+	pct.ZIndex = 501
+	pct.Parent = loader
+
+	local back = Instance.new("Frame")
+	back.Position = UDim2.new(0, 16, 1, -22)
+	back.Size = UDim2.new(1, -32, 0, 5)
+	back.BackgroundColor3 = Color3.fromRGB(40,40,55)
+	back.BorderSizePixel = 0
+	back.ZIndex = 501
+	back.Parent = loader
+	corner(back, UDim.new(1,0))
+
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.new(0,0,1,0)
+	fill.BackgroundColor3 = accent
+	fill.BorderSizePixel = 0
+	fill.ZIndex = 502
+	fill.Parent = back
+	corner(fill, UDim.new(1,0))
+	local fillGrad = Instance.new("UIGradient")
+	fillGrad.Color = makeRainbowSequence()
+	fillGrad.Parent = fill
+	table.insert(RAINBOW.gradients, fillGrad)
+
+	local shine = Instance.new("Frame")
+	shine.Size = UDim2.new(0.3, 0, 1, 0)
+	shine.Position = UDim2.new(-0.3, 0, 0, 0)
+	shine.BackgroundColor3 = Color3.fromRGB(255,255,255)
+	shine.BackgroundTransparency = 0.5
+	shine.BorderSizePixel = 0
+	shine.ZIndex = 503
+	shine.Parent = fill
+	corner(shine, UDim.new(1,0))
+	task.spawn(function()
+		while shine.Parent do
+			shine.Position = UDim2.new(-0.3, 0, 0, 0)
+			tw(shine, TweenInfo.new(1, Enum.EasingStyle.Sine), {Position = UDim2.new(1, 0, 0, 0)})
+			task.wait(1.2)
+		end
+	end)
+
+	task.spawn(function()
+		task.wait(0.3)
+		local steps = {{15,"初始化核心"},{34,"加载资源"},{56,"构建界面"},{78,"注入特效"},{100,"准备就绪"}}
+		for _, s in ipairs(steps) do
+			if not loader.Parent then return end
+			tw(fill, TweenInfo.new(0.22), {Size = UDim2.new(s[1]/100, 0, 1, 0)})
+			pct.Text = s[1] .. "%"
+			title.Text = s[2]
+			task.wait(0.2)
+		end
+		task.wait(0.18)
+		if not loader.Parent then return end
+		tw(loader, EASE_OUT, {BackgroundTransparency = 1, Size = UDim2.fromOffset(320, 0)})
+		for _, c in ipairs(loader:GetDescendants()) do
+			if c:IsA("TextLabel") then tw(c, EASE_OUT, {TextTransparency = 1}) end
+			if c:IsA("Frame") then tw(c, EASE_OUT, {BackgroundTransparency = 1}) end
+			if c:IsA("ImageLabel") then tw(c, EASE_OUT, {ImageTransparency = 1}) end
+		end
+		task.wait(0.36)
+		if loader.Parent then loader:Destroy() end
+		if onDone then onDone() end
+	end)
+end
+
+------------------------------------------------------------------
+-- 拖动
+------------------------------------------------------------------
+local function makeDraggable(target, gui)
+	local dragging = false
+	local startInputPos, startTargetPos
+	target.Active = true
+	target.InputBegan:Connect(function(i)
+		if dragging then return end
+		if i.UserInputType ~= Enum.UserInputType.MouseButton1
+		and i.UserInputType ~= Enum.UserInputType.Touch then return end
+		local objs = PlayerGui:GetGuiObjectsAtPosition(i.Position.X, i.Position.Y)
+		for _, o in ipairs(objs) do
+			if o ~= target and (o:IsA("TextButton") or o:IsA("ImageButton") or o:IsA("TextBox")) then
+				return
+			end
+			if o == target then break end
+		end
+		dragging = true
+		startInputPos = i.Position
+		startTargetPos = target.Position
+	end)
+	UserInputService.InputChanged:Connect(function(i)
+		if not dragging then return end
+		if i.UserInputType == Enum.UserInputType.MouseMovement
+		or i.UserInputType == Enum.UserInputType.Touch then
+			local d = i.Position - startInputPos
+			target.Position = UDim2.new(
+				startTargetPos.X.Scale, startTargetPos.X.Offset + d.X,
+				startTargetPos.Y.Scale, startTargetPos.Y.Offset + d.Y
+			)
+			clampPosition(target, gui.AbsoluteSize)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseButton1
+		or i.UserInputType == Enum.UserInputType.Touch) then
+			dragging = false
+			clampPosition(target, gui.AbsoluteSize)
+		end
+	end)
+end
+
+local globalClickListeners = {}
+UserInputService.InputBegan:Connect(function(i)
+	if i.UserInputType == Enum.UserInputType.MouseButton1
+	or i.UserInputType == Enum.UserInputType.Touch then
+		for _, fn in ipairs(globalClickListeners) do pcall(fn, i) end
+	end
+end)
+
+------------------------------------------------------------------
+-- 创建窗口
+------------------------------------------------------------------
+function DynamicUI:CreateWindow(opts)
+	opts = opts or {}
+	local cfg = {
+		Title       = opts.Title or "动态界面",
+		Icon        = opts.Icon or "",
+		Subtitle    = opts.Subtitle or opts.Author or "尊享版",
+		WindowSize  = opts.WindowSize or UDim2.fromOffset(620, 410),
+		IslandSize  = opts.IslandSize or UDim2.fromOffset(220, 44),
+		IconImage   = opts.IconImage,
+		Theme       = opts.Theme or "深紫",
+	}
+
+	-- 深拷贝当前主题
+	local T = {}
+	for k, v in pairs(THEMES[cfg.Theme] or THEMES.深紫) do T[k] = v end
+
+	-- 订阅系统
+	local subs = {}
+	local function subscribe(fn)
+		table.insert(subs, fn)
+		fn(T)
+	end
+	local function notifyAll() for _, fn in ipairs(subs) do pcall(fn, T) end end
+
+	local gui = ensureGui()
+
+	-- 外层光晕
+	local glow = Instance.new("ImageLabel")
+	glow.AnchorPoint = Vector2.new(0.5, 0.5)
+	glow.Position = UDim2.new(0.5, 0, 0.5, 0)
+	glow.Size = UDim2.fromOffset(cfg.WindowSize.X.Offset + 140, cfg.WindowSize.Y.Offset + 140)
+	glow.BackgroundTransparency = 1
+	glow.Image = ASSETS.GLOW_SQUARE
+	glow.ImageColor3 = T.Accent
+	glow.ImageTransparency = 0.7
+	glow.ScaleType = Enum.ScaleType.Slice
+	glow.SliceCenter = Rect.new(24,24,276,276)
+	glow.Visible = false
+	glow.ZIndex = 8
+	glow.Parent = gui
+	subscribe(function(t) glow.ImageColor3 = t.Accent end)
+
+	-- 光晕呼吸
+	task.spawn(function()
+		while glow.Parent do
+			tw(glow, TweenInfo.new(2.5, Enum.EasingStyle.Sine), {ImageTransparency = 0.55})
+			task.wait(2.5)
+			tw(glow, TweenInfo.new(2.5, Enum.EasingStyle.Sine), {ImageTransparency = 0.75})
+			task.wait(2.5)
+		end
+	end)
+
+	-- 主窗
+	local window = Instance.new("Frame")
+	window.AnchorPoint = Vector2.new(0.5, 0.5)
+	window.Position = UDim2.new(0.5, 0, 0.5, 0)
+	window.Size = cfg.WindowSize
+	window.BackgroundColor3 = T.Bg
+	window.BackgroundTransparency = 1
+	window.BorderSizePixel = 0
+	window.ClipsDescendants = true
+	window.Active = true
+	window.Visible = false
+	window.ZIndex = 10
+	window.Parent = gui
+	corner(window, UDim.new(0, 14))
+	rainbowBorder(window, 1.8, 0)  -- ★ 真彩虹流光边框
+	subscribe(function(t) window.BackgroundColor3 = t.Bg end)
+
+	local windowScale = Instance.new("UIScale")
+	windowScale.Scale = 0.9
+	windowScale.Parent = window
+
+	-- 噪点
+	local noise = Instance.new("ImageLabel")
+	noise.Size = UDim2.fromScale(1,1)
+	noise.BackgroundTransparency = 1
+	noise.Image = ASSETS.NOISE
+	noise.ImageTransparency = 0.96
+	noise.ScaleType = Enum.ScaleType.Tile
+	noise.TileSize = UDim2.fromOffset(120, 120)
+	noise.ZIndex = 11
+	noise.Parent = window
+
+	-- 内层呼吸光
+	local innerGlow = Instance.new("ImageLabel")
+	innerGlow.Size = UDim2.fromScale(1,1)
+	innerGlow.BackgroundTransparency = 1
+	innerGlow.Image = ASSETS.GLOW_SQUARE
+	innerGlow.ImageColor3 = T.Accent
+	innerGlow.ImageTransparency = 0.95
+	innerGlow.ScaleType = Enum.ScaleType.Slice
+	innerGlow.SliceCenter = Rect.new(24,24,276,276)
+	innerGlow.ZIndex = 11
+	innerGlow.Parent = window
+	subscribe(function(t) innerGlow.ImageColor3 = t.Accent end)
+
+	------------------------------------------------------------------
+	-- 左侧栏
+	------------------------------------------------------------------
+	local sidebar = Instance.new("Frame")
+	sidebar.Size = UDim2.new(0, 168, 1, 0)
+	sidebar.BackgroundColor3 = T.BgDeep
+	sidebar.BorderSizePixel = 0
+	sidebar.ZIndex = 12
+	sidebar.Parent = window
+	subscribe(function(t) sidebar.BackgroundColor3 = t.BgDeep end)
+
+	local sidebarBorder = Instance.new("Frame")
+	sidebarBorder.AnchorPoint = Vector2.new(1, 0)
+	sidebarBorder.Position = UDim2.new(1, 0, 0, 0)
+	sidebarBorder.Size = UDim2.new(0, 1, 1, 0)
+	sidebarBorder.BackgroundColor3 = T.Border
+	sidebarBorder.BackgroundTransparency = 0.5
+	sidebarBorder.BorderSizePixel = 0
+	sidebarBorder.ZIndex = 13
+	sidebarBorder.Parent = sidebar
+	subscribe(function(t) sidebarBorder.BackgroundColor3 = t.Border end)
+
+	-- LOGO 区
+	local logoArea = Instance.new("Frame")
+	logoArea.Size = UDim2.new(1, 0, 0, 76)
+	logoArea.BackgroundTransparency = 1
+	logoArea.ZIndex = 13
+	logoArea.Parent = sidebar
+
+	local logoIcon = Instance.new("Frame")
+	logoIcon.Size = UDim2.fromOffset(40, 40)
+	logoIcon.Position = UDim2.new(0, 16, 0.5, -20)
+	logoIcon.BackgroundColor3 = T.Surface
+	logoIcon.BorderSizePixel = 0
+	logoIcon.ZIndex = 14
+	logoIcon.Parent = logoArea
+	corner(logoIcon, UDim.new(0, 9))
+	rainbowBorder(logoIcon, 1.5, 0.1)
+	subscribe(function(t) logoIcon.BackgroundColor3 = t.Surface end)
+
+	if cfg.IconImage then
+		local img = Instance.new("ImageLabel")
+		img.Size = UDim2.fromScale(1,1)
+		img.BackgroundTransparency = 1
+		img.Image = cfg.IconImage
+		img.ScaleType = Enum.ScaleType.Crop
+		img.ZIndex = 15
+		img.Parent = logoIcon
+		corner(img, UDim.new(0, 7))
+	else
+		local iconText = Instance.new("TextLabel")
+		iconText.BackgroundTransparency = 1
+		iconText.Size = UDim2.fromScale(1,1)
+		iconText.Font = Enum.Font.GothamBold
+		iconText.TextSize = 17
+		iconText.TextColor3 = T.Text
+		iconText.Text = (cfg.Icon ~= "" and cfg.Icon:sub(1,1):upper()) or cfg.Title:sub(1,1):upper()
+		iconText.ZIndex = 15
+		iconText.Parent = logoIcon
+		subscribe(function(t) iconText.TextColor3 = t.Text end)
+	end
+
+	local logoTitle = Instance.new("TextLabel")
+	logoTitle.BackgroundTransparency = 1
+	logoTitle.Position = UDim2.new(0, 66, 0, 20)
+	logoTitle.Size = UDim2.new(1, -76, 0, 18)
+	logoTitle.Font = Enum.Font.GothamBold
+	logoTitle.TextSize = 13
+	logoTitle.TextXAlignment = Enum.TextXAlignment.Left
+	logoTitle.TextColor3 = T.Text
+	logoTitle.Text = cfg.Title
+	logoTitle.ZIndex = 14
+	logoTitle.Parent = logoArea
+	subscribe(function(t) logoTitle.TextColor3 = t.Text end)
+
+	local logoSub = Instance.new("TextLabel")
+	logoSub.BackgroundTransparency = 1
+	logoSub.Position = UDim2.new(0, 66, 0, 40)
+	logoSub.Size = UDim2.new(1, -76, 0, 14)
+	logoSub.Font = Enum.Font.Gotham
+	logoSub.TextSize = 10
+	logoSub.TextXAlignment = Enum.TextXAlignment.Left
+	logoSub.TextColor3 = T.TextMuted
+	logoSub.Text = cfg.Subtitle
+	logoSub.ZIndex = 14
+	logoSub.Parent = logoArea
+	subscribe(function(t) logoSub.TextColor3 = t.TextMuted end)
+
+	-- 分隔
+	local logoDivider = Instance.new("Frame")
+	logoDivider.Position = UDim2.new(0, 14, 0, 76)
+	logoDivider.Size = UDim2.new(1, -28, 0, 1)
+	logoDivider.BackgroundColor3 = T.Border
+	logoDivider.BackgroundTransparency = 0.5
+	logoDivider.BorderSizePixel = 0
+	logoDivider.ZIndex = 13
+	logoDivider.Parent = sidebar
+	subscribe(function(t) logoDivider.BackgroundColor3 = t.Border end)
+
+	-- Tab 列表
+	local tabHolder = Instance.new("ScrollingFrame")
+	tabHolder.Position = UDim2.new(0, 0, 0, 84)
+	tabHolder.Size = UDim2.new(1, 0, 1, -140)
+	tabHolder.BackgroundTransparency = 1
+	tabHolder.BorderSizePixel = 0
+	tabHolder.ScrollBarThickness = 0
+	tabHolder.CanvasSize = UDim2.new(0,0,0,0)
+	tabHolder.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	tabHolder.ZIndex = 13
+	tabHolder.Active = true
+	tabHolder.Parent = sidebar
+
+	local tabList = Instance.new("UIListLayout")
+	tabList.Padding = UDim.new(0, 3)
+	tabList.Parent = tabHolder
+	local tabPad = Instance.new("UIPadding")
+	tabPad.PaddingLeft = UDim.new(0, 10)
+	tabPad.PaddingRight = UDim.new(0, 10)
+	tabPad.Parent = tabHolder
+
+	-- 底部用户卡
+	local userCard = Instance.new("Frame")
+	userCard.AnchorPoint = Vector2.new(0, 1)
+	userCard.Position = UDim2.new(0, 10, 1, -12)
+	userCard.Size = UDim2.new(1, -20, 0, 44)
+	userCard.BackgroundColor3 = T.Surface
+	userCard.BorderSizePixel = 0
+	userCard.ZIndex = 13
+	userCard.Parent = sidebar
+	corner(userCard, UDim.new(0, 8))
+	stroke(userCard, T.Border, 0.5, 1)
+	subscribe(function(t)
+		userCard.BackgroundColor3 = t.Surface
+	end)
+
+	local userDot = Instance.new("Frame")
+	userDot.Size = UDim2.fromOffset(8, 8)
+	userDot.Position = UDim2.new(0, 12, 0.5, -4)
+	userDot.BackgroundColor3 = Color3.fromRGB(80, 220, 140)
+	userDot.BorderSizePixel = 0
+	userDot.ZIndex = 14
+	userDot.Parent = userCard
+	corner(userDot, UDim.new(1,0))
+	task.spawn(function()
+		while userDot.Parent do
+			tw(userDot, TweenInfo.new(1, Enum.EasingStyle.Sine), {BackgroundTransparency = 0.5})
+			task.wait(1)
+			tw(userDot, TweenInfo.new(1, Enum.EasingStyle.Sine), {BackgroundTransparency = 0})
+			task.wait(1)
+		end
+	end)
+
+	local userName = Instance.new("TextLabel")
+	userName.BackgroundTransparency = 1
+	userName.Position = UDim2.new(0, 26, 0, 6)
+	userName.Size = UDim2.new(1, -34, 0, 14)
+	userName.Font = Enum.Font.GothamSemibold
+	userName.TextSize = 11
+	userName.TextXAlignment = Enum.TextXAlignment.Left
+	userName.TextColor3 = T.Text
+	userName.Text = LocalPlayer.DisplayName or LocalPlayer.Name
+	userName.ZIndex = 14
+	userName.Parent = userCard
+	subscribe(function(t) userName.TextColor3 = t.Text end)
+
+	local userStatus = Instance.new("TextLabel")
+	userStatus.BackgroundTransparency = 1
+	userStatus.Position = UDim2.new(0, 26, 0, 22)
+	userStatus.Size = UDim2.new(1, -34, 0, 14)
+	userStatus.Font = Enum.Font.Gotham
+	userStatus.TextSize = 9
+	userStatus.TextXAlignment = Enum.TextXAlignment.Left
+	userStatus.TextColor3 = Color3.fromRGB(80, 220, 140)
+	userStatus.Text = "● 已激活 · 在线"
+	userStatus.ZIndex = 14
+	userStatus.Parent = userCard
+
+	------------------------------------------------------------------
+	-- 右侧主区
+	------------------------------------------------------------------
+	local mainArea = Instance.new("Frame")
+	mainArea.Position = UDim2.new(0, 168, 0, 0)
+	mainArea.Size = UDim2.new(1, -168, 1, 0)
+	mainArea.BackgroundColor3 = T.Bg
+	mainArea.BorderSizePixel = 0
+	mainArea.ZIndex = 11
+	mainArea.Parent = window
+	subscribe(function(t) mainArea.BackgroundColor3 = t.Bg end)
+
+	local topBar = Instance.new("Frame")
+	topBar.Size = UDim2.new(1, 0, 0, 46)
+	topBar.BackgroundTransparency = 1
+	topBar.ZIndex = 12
+	topBar.Parent = mainArea
+
+	-- 扫描线（顶部装饰）
+	task.spawn(function()
+		while topBar.Parent do
+			local line = Instance.new("Frame")
+			line.AnchorPoint = Vector2.new(0, 0)
+			line.Size = UDim2.new(1, 0, 0, 1)
+			line.Position = UDim2.new(0, 0, 0, 0)
+			line.BackgroundColor3 = T.Accent
+			line.BackgroundTransparency = 0.6
+			line.BorderSizePixel = 0
+			line.ZIndex = 13
+			line.Parent = mainArea
+			local grad = Instance.new("UIGradient")
+			grad.Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 1),
+				NumberSequenceKeypoint.new(0.5, 0.3),
+				NumberSequenceKeypoint.new(1, 1),
+			})
+			grad.Parent = line
+			tw(line, TweenInfo.new(2.5, Enum.EasingStyle.Linear), {Position = UDim2.new(0, 0, 1, 0)})
+			task.delay(2.6, function() if line.Parent then line:Destroy() end end)
+			task.wait(5)
+		end
+	end)
+
+	local topAccent = Instance.new("Frame")
+	topAccent.Size = UDim2.fromOffset(3, 18)
+	topAccent.Position = UDim2.new(0, 14, 0.5, -9)
+	topAccent.BackgroundColor3 = T.Accent
+	topAccent.BorderSizePixel = 0
+	topAccent.ZIndex = 13
+	topAccent.Parent = topBar
+	corner(topAccent, UDim.new(1, 0))
+	subscribe(function(t) topAccent.BackgroundColor3 = t.Accent end)
+
+	local currentTabLabel = Instance.new("TextLabel")
+	currentTabLabel.BackgroundTransparency = 1
+	currentTabLabel.Position = UDim2.new(0, 24, 0, 0)
+	currentTabLabel.Size = UDim2.new(0.5, 0, 1, 0)
+	currentTabLabel.Font = Enum.Font.GothamBold
+	currentTabLabel.TextSize = 14
+	currentTabLabel.TextXAlignment = Enum.TextXAlignment.Left
+	currentTabLabel.TextColor3 = T.Text
+	currentTabLabel.Text = ""
+	currentTabLabel.ZIndex = 13
+	currentTabLabel.Parent = topBar
+	subscribe(function(t) currentTabLabel.TextColor3 = t.Text end)
+
+	local function makeTopBtn(symbol, color)
+		local b = Instance.new("TextButton")
+		b.Size = UDim2.fromOffset(28, 28)
+		b.BackgroundColor3 = T.Surface
+		b.BorderSizePixel = 0
+		b.AutoButtonColor = false
+		b.Font = Enum.Font.GothamBold
+		b.TextSize = 14
+		b.Text = symbol
+		b.TextColor3 = color
+		b.ZIndex = 14
+		b.Active = true
+		corner(b, UDim.new(0, 7))
+		local s = stroke(b, T.Border, 0.5, 1)
+		subscribe(function(t)
+			if not b:GetAttribute("Hovered") then
+				b.BackgroundColor3 = t.Surface
+			end
+			s.Color = t.Border
+		end)
+		local sc = Instance.new("UIScale")
+		sc.Parent = b
+		b.MouseEnter:Connect(function()
+			b:SetAttribute("Hovered", true)
+			tw(b, EASE_FAST, {BackgroundColor3 = color, TextColor3 = Color3.fromRGB(255,255,255)})
+			tw(sc, EASE_FAST, {Scale = 1.1})
+		end)
+		b.MouseLeave:Connect(function()
+			b:SetAttribute("Hovered", false)
+			tw(b, EASE_FAST, {BackgroundColor3 = T.Surface, TextColor3 = color})
+			tw(sc, EASE_FAST, {Scale = 1})
+		end)
+		return b
+	end
+
+	local btnClose = makeTopBtn("×", Color3.fromRGB(240,90,90))
+	btnClose.AnchorPoint = Vector2.new(1, 0.5)
+	btnClose.Position = UDim2.new(1, -14, 0.5, 0)
+	btnClose.Parent = topBar
+
+	local btnMin = makeTopBtn("−", Color3.fromRGB(240,180,70))
+	btnMin.AnchorPoint = Vector2.new(1, 0.5)
+	btnMin.Position = UDim2.new(1, -50, 0.5, 0)
+	btnMin.Parent = topBar
+
+	local topDivider = Instance.new("Frame")
+	topDivider.Size = UDim2.new(1, 0, 0, 1)
+	topDivider.Position = UDim2.new(0, 0, 0, 46)
+	topDivider.BackgroundColor3 = T.Border
+	topDivider.BackgroundTransparency = 0.5
+	topDivider.BorderSizePixel = 0
+	topDivider.ZIndex = 12
+	topDivider.Parent = mainArea
+	subscribe(function(t) topDivider.BackgroundColor3 = t.Border end)
+
+	local contentHolder = Instance.new("Frame")
+	contentHolder.Position = UDim2.new(0, 0, 0, 47)
+	contentHolder.Size = UDim2.new(1, 0, 1, -47)
+	contentHolder.BackgroundTransparency = 1
+	contentHolder.BorderSizePixel = 0
+	contentHolder.ClipsDescendants = true
+	contentHolder.ZIndex = 12
+	contentHolder.Active = true
+	contentHolder.Parent = mainArea
+
+	local overlayLayer = Instance.new("Frame")
+	overlayLayer.Size = UDim2.fromScale(1,1)
+	overlayLayer.BackgroundTransparency = 1
+	overlayLayer.ZIndex = 500
+	overlayLayer.ClipsDescendants = false
+	overlayLayer.Active = false
+	overlayLayer.Parent = gui
+
+	------------------------------------------------------------------
+	-- 灵动岛
+	------------------------------------------------------------------
+	local island = Instance.new("Frame")
+	island.AnchorPoint = Vector2.new(0.5, 0)
+	island.Position = UDim2.new(0.5, 0, 0, 14)
+	island.Size = cfg.IslandSize
+	island.BackgroundColor3 = T.BgDeep
+	island.BackgroundTransparency = 0
+	island.BorderSizePixel = 0
+	island.ClipsDescendants = true
+	island.Active = true
+	island.Visible = false
+	island.ZIndex = 60
+	island.Parent = gui
+	corner(island, UDim.new(1,0))
+	rainbowBorder(island, 1.5, 0)
+	subscribe(function(t) island.BackgroundColor3 = t.BgDeep end)
+
+	local statusDot = Instance.new("Frame")
+	statusDot.Size = UDim2.fromOffset(8, 8)
+	statusDot.Position = UDim2.new(0, 14, 0.5, -4)
+	statusDot.BackgroundColor3 = T.Accent
+	statusDot.BorderSizePixel = 0
+	statusDot.ZIndex = 63
+	statusDot.Parent = island
+	corner(statusDot, UDim.new(1,0))
+	subscribe(function(t) statusDot.BackgroundColor3 = t.Accent end)
+	task.spawn(function()
+		while statusDot.Parent do
+			tw(statusDot, TweenInfo.new(1.1, Enum.EasingStyle.Sine), {BackgroundTransparency = 0.6})
+			task.wait(1.1)
+			tw(statusDot, TweenInfo.new(1.1, Enum.EasingStyle.Sine), {BackgroundTransparency = 0})
+			task.wait(1.1)
+		end
+	end)
+
+	local iTitle = Instance.new("TextLabel")
+	iTitle.BackgroundTransparency = 1
+	iTitle.Position = UDim2.new(0, 28, 0, 0)
+	iTitle.Size = UDim2.new(1, -68, 1, 0)
+	iTitle.Font = Enum.Font.GothamSemibold
+	iTitle.TextSize = 11
+	iTitle.TextXAlignment = Enum.TextXAlignment.Left
+	iTitle.TextColor3 = T.Text
+	iTitle.Text = cfg.Title
+	iTitle.ZIndex = 63
+	iTitle.Parent = island
+	subscribe(function(t) iTitle.TextColor3 = t.Text end)
+
+	-- 波形（彩虹色）
+	local waveWrap = Instance.new("Frame")
+	waveWrap.AnchorPoint = Vector2.new(1, 0.5)
+	waveWrap.Position = UDim2.new(1, -14, 0.5, 0)
+	waveWrap.Size = UDim2.fromOffset(28, 16)
+	waveWrap.BackgroundTransparency = 1
+	waveWrap.ZIndex = 63
+	waveWrap.Parent = island
+
+	local waveColors = {Color3.fromRGB(255,80,180), Color3.fromRGB(180,100,255), Color3.fromRGB(80,180,255), Color3.fromRGB(80,255,180)}
+	for i = 1, 4 do
+		local bar = Instance.new("Frame")
+		bar.AnchorPoint = Vector2.new(0.5, 1)
+		bar.Size = UDim2.fromOffset(2, 5)
+		bar.Position = UDim2.new(0, (i - 1) * 7 + 3, 1, -1)
+		bar.BackgroundColor3 = waveColors[i]
+		bar.BorderSizePixel = 0
+		bar.ZIndex = 64
+		bar.Parent = waveWrap
+		corner(bar, UDim.new(1,0))
+		task.spawn(function()
+			while bar.Parent do
+				local h = math.random(3, 14)
+				tw(bar, TweenInfo.new(0.18, Enum.EasingStyle.Sine), {Size = UDim2.fromOffset(2, h)})
+				task.wait(math.random(10, 22) / 100)
+			end
+		end)
+	end
+
+	makeDraggable(window, gui)
+	makeDraggable(island, gui)
+
+	------------------------------------------------------------------
+	-- Window 对象
+	------------------------------------------------------------------
+	local Window = {}
+	Window.tabs = {}
+	Window.current = nil
+	Window._dropdowns = {}
+
+	local setMin
+	local lastIslandClick = 0
+	island.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1
+		or i.UserInputType == Enum.UserInputType.Touch then
+			local now = tick()
+			if now - lastIslandClick < 0.35 then
+				if setMin then setMin(false) end
+			end
+			lastIslandClick = now
+		end
+	end)
+
+	local function switchTab(name)
+		if Window.current == name then return end
+		for _, fn in ipairs(Window._dropdowns) do pcall(fn) end
+		for n, t in pairs(Window.tabs) do
+			local active = (n == name)
+			tw(t.button, EASE_FAST, {BackgroundColor3 = active and T.AccentSoft or T.BgDeep})
+			tw(t.label, EASE_FAST, {TextColor3 = active and T.Text or T.TextSub})
+			tw(t.iconLbl, EASE_FAST, {TextColor3 = active and T.Accent or T.TextSub})
+			tw(t.indicator, EASE_FAST, {
+				BackgroundTransparency = active and 0 or 1,
+				Size = active and UDim2.new(0, 3, 0.55, 0) or UDim2.new(0, 3, 0, 0),
+			})
+			if active then
+				t.page.Visible = true
+				currentTabLabel.Text = name
+			else
+				t.page.Visible = false
+			end
+		end
+		Window.current = name
+	end
+
+	function Window:AddTab(name, iconEmoji)
+		iconEmoji = iconEmoji or "▸"
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, 0, 0, 36)
+		btn.BackgroundColor3 = T.BgDeep
+		btn.BorderSizePixel = 0
+		btn.AutoButtonColor = false
+		btn.Text = ""
+		btn.ZIndex = 14
+		btn.Active = true
+		btn.Parent = tabHolder
+		corner(btn, UDim.new(0, 7))
+
+		local indicator = Instance.new("Frame")
+		indicator.AnchorPoint = Vector2.new(0, 0.5)
+		indicator.Position = UDim2.new(0, 2, 0.5, 0)
+		indicator.Size = UDim2.new(0, 3, 0, 0)
+		indicator.BackgroundColor3 = T.Accent
+		indicator.BackgroundTransparency = 1
+		indicator.BorderSizePixel = 0
+		indicator.ZIndex = 15
+		indicator.Parent = btn
+		corner(indicator, UDim.new(1, 0))
+
+		local iconLbl = Instance.new("TextLabel")
+		iconLbl.BackgroundTransparency = 1
+		iconLbl.Position = UDim2.new(0, 14, 0, 0)
+		iconLbl.Size = UDim2.fromOffset(16, 36)
+		iconLbl.Font = Enum.Font.GothamBold
+		iconLbl.TextSize = 13
+		iconLbl.TextColor3 = T.TextSub
+		iconLbl.Text = iconEmoji
+		iconLbl.ZIndex = 15
+		iconLbl.Parent = btn
+
+		local label = Instance.new("TextLabel")
+		label.BackgroundTransparency = 1
+		label.Position = UDim2.new(0, 38, 0, 0)
+		label.Size = UDim2.new(1, -48, 1, 0)
+		label.Font = Enum.Font.GothamSemibold
+		label.TextSize = 12
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.TextColor3 = T.TextSub
+		label.Text = name
+		label.ZIndex = 15
+		label.Parent = btn
+
+		subscribe(function(t)
+			if Window.current == name then
+				btn.BackgroundColor3 = t.AccentSoft
+				label.TextColor3 = t.Text
+				iconLbl.TextColor3 = t.Accent
+			else
+				btn.BackgroundColor3 = t.BgDeep
+				label.TextColor3 = t.TextSub
+				iconLbl.TextColor3 = t.TextSub
+			end
+			indicator.BackgroundColor3 = t.Accent
+		end)
+
+		btn.MouseEnter:Connect(function()
+			if Window.current ~= name then
+				tw(btn, EASE_FAST, {BackgroundColor3 = T.Surface})
+				tw(label, EASE_FAST, {TextColor3 = T.Text})
+			end
+		end)
+		btn.MouseLeave:Connect(function()
+			if Window.current ~= name then
+				tw(btn, EASE_FAST, {BackgroundColor3 = T.BgDeep})
+				tw(label, EASE_FAST, {TextColor3 = T.TextSub})
+			end
+		end)
+		btn.MouseButton1Click:Connect(function() switchTab(name) end)
+
+		local page = Instance.new("ScrollingFrame")
+		page.Size = UDim2.fromScale(1,1)
+		page.BackgroundTransparency = 1
+		page.BorderSizePixel = 0
+		page.ScrollBarThickness = 3
+		page.ScrollBarImageColor3 = T.Accent
+		page.ScrollBarImageTransparency = 0.3
+		page.CanvasSize = UDim2.new(0,0,0,0)
+		page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		page.ScrollingDirection = Enum.ScrollingDirection.Y
+		page.ElasticBehavior = Enum.ElasticBehavior.Never
+		page.Visible = false
+		page.ZIndex = 13
+		page.Active = true
+		page.Parent = contentHolder
+		subscribe(function(t) page.ScrollBarImageColor3 = t.Accent end)
+
+		local layout = Instance.new("UIListLayout")
+		layout.Padding = UDim.new(0, 8)
+		layout.Parent = page
+		local pad = Instance.new("UIPadding")
+		pad.PaddingTop = UDim.new(0, 16)
+		pad.PaddingLeft = UDim.new(0, 18)
+		pad.PaddingRight = UDim.new(0, 18)
+		pad.PaddingBottom = UDim.new(0, 18)
+		pad.Parent = page
+
+		Window.tabs[name] = {button = btn, page = page, label = label, indicator = indicator, iconLbl = iconLbl}
+
+		local Tab = {}
+
+		local function rowBase(h)
+			local r = Instance.new("Frame")
+			r.Size = UDim2.new(1, 0, 0, h or 42)
+			r.BackgroundColor3 = T.Surface
+			r.BorderSizePixel = 0
+			r.ZIndex = 14
+			r.Active = true
+			r.ClipsDescendants = true
+			r.Parent = page
+			corner(r, UDim.new(0, 8))
+			local s = stroke(r, T.Border, 0.5, 1)
+			subscribe(function(t)
+				if not r:GetAttribute("Pressed") and not r:GetAttribute("Hovered") then
+					r.BackgroundColor3 = t.Surface
+				end
+				s.Color = t.Border
+			end)
+			return r, s
+		end
+
+		function Tab:AddSection(text)
+			local wrap = Instance.new("Frame")
+			wrap.Size = UDim2.new(1, 0, 0, 28)
+			wrap.BackgroundTransparency = 1
+			wrap.ZIndex = 14
+			wrap.Parent = page
+
+			local bar = Instance.new("Frame")
+			bar.Size = UDim2.fromOffset(3, 14)
+			bar.Position = UDim2.new(0, 0, 0.5, -7)
+			bar.BackgroundColor3 = T.Accent
+			bar.BorderSizePixel = 0
+			bar.ZIndex = 15
+			bar.Parent = wrap
+			corner(bar, UDim.new(1, 0))
+			subscribe(function(t) bar.BackgroundColor3 = t.Accent end)
+
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Position = UDim2.new(0, 12, 0, 0)
+			l.Size = UDim2.new(1, -16, 1, 0)
+			l.Font = Enum.Font.GothamBold
+			l.TextSize = 12
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextColor3 = T.Text
+			l.Text = text
+			l.ZIndex = 15
+			l.Parent = wrap
+			subscribe(function(t) l.TextColor3 = t.Text end)
+			return wrap
+		end
+
+		function Tab:AddLabel(text)
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Size = UDim2.new(1, 0, 0, 20)
+			l.Font = Enum.Font.Gotham
+			l.TextSize = 11
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextColor3 = T.TextSub
+			l.Text = text
+			l.ZIndex = 14
+			l.Parent = page
+			subscribe(function(t) l.TextColor3 = t.TextSub end)
+			local api = {Instance = l}
+			function api:Set(t) l.Text = t end
+			return api
+		end
+
+		function Tab:AddDivider()
+			local d = Instance.new("Frame")
+			d.Size = UDim2.new(1, 0, 0, 1)
+			d.BackgroundColor3 = T.Border
+			d.BackgroundTransparency = 0.5
+			d.BorderSizePixel = 0
+			d.ZIndex = 14
+			d.Parent = page
+			subscribe(function(t) d.BackgroundColor3 = t.Border end)
+			return d
+		end
+
+		function Tab:AddButton(text, cb)
+			local r, rs = rowBase(40)
+
+			local b = Instance.new("TextButton")
+			b.BackgroundTransparency = 1
+			b.Size = UDim2.fromScale(1,1)
+			b.Text = ""
+			b.AutoButtonColor = false
+			b.ZIndex = 15
+			b.Active = true
+			b.Parent = r
+
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Position = UDim2.new(0, 14, 0, 0)
+			l.Size = UDim2.new(1, -36, 1, 0)
+			l.Font = Enum.Font.GothamMedium
+			l.TextSize = 12
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextColor3 = T.Text
+			l.Text = text
+			l.ZIndex = 16
+			l.Parent = r
+			subscribe(function(t) l.TextColor3 = t.Text end)
+
+			local chev = Instance.new("TextLabel")
+			chev.BackgroundTransparency = 1
+			chev.AnchorPoint = Vector2.new(1, 0.5)
+			chev.Position = UDim2.new(1, -14, 0.5, 0)
+			chev.Size = UDim2.fromOffset(14,14)
+			chev.Font = Enum.Font.GothamBold
+			chev.TextSize = 14
+			chev.TextColor3 = T.TextMuted
+			chev.Text = "›"
+			chev.ZIndex = 16
+			chev.Parent = r
+
+			b.MouseEnter:Connect(function()
+				r:SetAttribute("Hovered", true)
+				tw(r, EASE_FAST, {BackgroundColor3 = T.SurfaceHover})
+				tw(chev, EASE_FAST, {Position = UDim2.new(1,-10,0.5,0), TextColor3 = T.Accent})
+			end)
+			b.MouseLeave:Connect(function()
+				r:SetAttribute("Hovered", false)
+				tw(r, EASE_FAST, {BackgroundColor3 = T.Surface})
+				tw(chev, EASE_FAST, {Position = UDim2.new(1,-14,0.5,0), TextColor3 = T.TextMuted})
+			end)
+			b.MouseButton1Click:Connect(function()
+				r:SetAttribute("Pressed", true)
+				tw(r, EASE_FAST, {BackgroundColor3 = T.AccentSoft})
+				rs.Color = T.Accent
+				rs.Transparency = 0
+				task.delay(0.18, function()
+					rs.Color = T.Border
+					rs.Transparency = 0.5
+					r:SetAttribute("Pressed", false)
+					tw(r, EASE_FAST, {BackgroundColor3 = r:GetAttribute("Hovered") and T.SurfaceHover or T.Surface})
+				end)
+				if cb then task.spawn(cb) end
+			end)
+
+			return {Instance = r}
+		end
+
+		function Tab:AddToggle(text, default, cb)
+			local state = default and true or false
+			local r = rowBase(42)
+
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Position = UDim2.new(0, 14, 0, 0)
+			l.Size = UDim2.new(1, -68, 1, 0)
+			l.Font = Enum.Font.GothamMedium
+			l.TextSize = 12
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextColor3 = T.Text
+			l.Text = text
+			l.ZIndex = 16
+			l.Parent = r
+			subscribe(function(t) l.TextColor3 = t.Text end)
+
+			local track = Instance.new("TextButton")
+			track.AnchorPoint = Vector2.new(1, 0.5)
+			track.Position = UDim2.new(1, -14, 0.5, 0)
+			track.Size = UDim2.fromOffset(38, 20)
+			track.AutoButtonColor = false
+			track.Text = ""
+			track.BackgroundColor3 = state and T.Accent or T.Track
+			track.BorderSizePixel = 0
+			track.ZIndex = 16
+			track.Active = true
+			track.Parent = r
+			corner(track, UDim.new(1,0))
+			subscribe(function(t)
+				track.BackgroundColor3 = state and t.Accent or t.Track
+			end)
+
+			local glow = Instance.new("UIStroke")
+			glow.Color = T.Accent
+			glow.Transparency = state and 0.5 or 1
+			glow.Thickness = 3
+			glow.Parent = track
+			subscribe(function(t) glow.Color = t.Accent end)
+
+			local dot = Instance.new("Frame")
+			dot.Size = UDim2.fromOffset(16, 16)
+			dot.Position = state and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)
+			dot.BackgroundColor3 = Color3.fromRGB(255,255,255)
+			dot.BorderSizePixel = 0
+			dot.ZIndex = 17
+			dot.Parent = track
+			corner(dot, UDim.new(1,0))
+
+			track.MouseButton1Click:Connect(function()
+				state = not state
+				tw(track, EASE_FAST, {BackgroundColor3 = state and T.Accent or T.Track})
+				tw(glow, EASE_FAST, {Transparency = state and 0.5 or 1})
+				tw(dot, TweenInfo.new(0.25, Enum.EasingStyle.Back), {
+					Position = state and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)
+				})
+				if cb then task.spawn(cb, state) end
+				DynamicUI:Notify((state and "已开启 · " or "已关闭 · ") .. text, state and "success" or "warn")
+			end)
+
+			local api = {Instance = r}
+			function api:Set(s)
+				state = s and true or false
+				tw(track, EASE_FAST, {BackgroundColor3 = state and T.Accent or T.Track})
+				tw(dot, EASE_FAST, {Position = state and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)})
+			end
+			function api:Get() return state end
+			return api
+		end
+
+		function Tab:AddSlider(text, min, max, default, cb)
+			min = min or 0; max = max or 100
+			default = math.clamp(default or min, min, max)
+			local r = rowBase(62)
+
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Position = UDim2.new(0, 14, 0, 8)
+			l.Size = UDim2.new(1, -28, 0, 16)
+			l.Font = Enum.Font.GothamMedium
+			l.TextSize = 12
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextColor3 = T.Text
+			l.Text = text
+			l.ZIndex = 16
+			l.Parent = r
+			subscribe(function(t) l.TextColor3 = t.Text end)
+
+			local val = Instance.new("TextLabel")
+			val.BackgroundTransparency = 1
+			val.AnchorPoint = Vector2.new(1, 0)
+			val.Position = UDim2.new(1, -14, 0, 8)
+			val.Size = UDim2.fromOffset(60, 16)
+			val.Font = Enum.Font.GothamBold
+			val.TextSize = 12
+			val.TextXAlignment = Enum.TextXAlignment.Right
+			val.TextColor3 = T.Accent
+			val.Text = tostring(default)
+			val.ZIndex = 16
+			val.Parent = r
+			subscribe(function(t) val.TextColor3 = t.Accent end)
+
+			local track = Instance.new("Frame")
+			track.Position = UDim2.new(0, 14, 1, -22)
+			track.Size = UDim2.new(1, -28, 0, 5)
+			track.BackgroundColor3 = T.Track
+			track.BorderSizePixel = 0
+			track.ZIndex = 16
+			track.Parent = r
+			corner(track, UDim.new(1,0))
+			subscribe(function(t) track.BackgroundColor3 = t.Track end)
+
+			local fill = Instance.new("Frame")
+			fill.Size = UDim2.new((default-min)/math.max(max-min,1), 0, 1, 0)
+			fill.BackgroundColor3 = T.Accent
+			fill.BorderSizePixel = 0
+			fill.ZIndex = 17
+			fill.Parent = track
+			corner(fill, UDim.new(1,0))
+			-- 彩虹填充
+			local fillGrad = Instance.new("UIGradient")
+			fillGrad.Color = makeRainbowSequence()
+			fillGrad.Parent = fill
+			table.insert(RAINBOW.gradients, fillGrad)
+
+			local thumb = Instance.new("Frame")
+			thumb.AnchorPoint = Vector2.new(0.5, 0.5)
+			thumb.Position = UDim2.new((default-min)/math.max(max-min,1), 0, 0.5, 0)
+			thumb.Size = UDim2.fromOffset(14, 14)
+			thumb.BackgroundColor3 = Color3.fromRGB(255,255,255)
+			thumb.BorderSizePixel = 0
+			thumb.ZIndex = 18
+			thumb.Parent = track
+			corner(thumb, UDim.new(1,0))
+			local thumbStroke = stroke(thumb, T.Accent, 0, 2)
+			subscribe(function(t) thumbStroke.Color = t.Accent end)
+
+			local hit = Instance.new("TextButton")
+			hit.BackgroundTransparency = 1
+			hit.Text = ""
+			hit.Size = UDim2.new(1, 20, 0, 30)
+			hit.Position = UDim2.new(0, -10, 0.5, -15)
+			hit.ZIndex = 19
+			hit.AutoButtonColor = false
+			hit.Active = true
+			hit.Parent = track
+
+			local dragging = false
+			local lastValue = default
+			local function setFromX(x)
+				local rel = math.clamp((x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
+				local v = math.floor(min + (max - min) * rel + 0.5)
+				fill.Size = UDim2.new(rel, 0, 1, 0)
+				thumb.Position = UDim2.new(rel, 0, 0.5, 0)
+				val.Text = tostring(v)
+				if v ~= lastValue then
+					lastValue = v
+					if cb then task.spawn(cb, v) end
+				end
+			end
+
+			hit.InputBegan:Connect(function(i)
+				if i.UserInputType == Enum.UserInputType.MouseButton1
+				or i.UserInputType == Enum.UserInputType.Touch then
+					dragging = true
+					tw(thumb, EASE_FAST, {Size = UDim2.fromOffset(18, 18)})
+					setFromX(i.Position.X)
+				end
+			end)
+			local c1 = UserInputService.InputChanged:Connect(function(i)
+				if not dragging then return end
+				if i.UserInputType == Enum.UserInputType.MouseMovement
+				or i.UserInputType == Enum.UserInputType.Touch then
+					setFromX(i.Position.X)
+				end
+			end)
+			local c2 = UserInputService.InputEnded:Connect(function(i)
+				if dragging and (i.UserInputType == Enum.UserInputType.MouseButton1
+				or i.UserInputType == Enum.UserInputType.Touch) then
+					dragging = false
+					tw(thumb, EASE_SPRING, {Size = UDim2.fromOffset(14, 14)})
+				end
+			end)
+			r.AncestryChanged:Connect(function(_, p)
+				if not p then c1:Disconnect() c2:Disconnect() end
+			end)
+
+			local api = {Instance = r}
+			function api:Set(v)
+				v = math.clamp(v, min, max)
+				lastValue = v
+				local rel = (v-min)/math.max(max-min,1)
+				fill.Size = UDim2.new(rel, 0, 1, 0)
+				thumb.Position = UDim2.new(rel, 0, 0.5, 0)
+				val.Text = tostring(v)
+			end
+			function api:Get() return lastValue end
+			return api
+		end
+
+		function Tab:AddDropdown(text, options, cb)
+			options = options or {}
+			local current = options[1] or ""
+			local r = rowBase(42)
+
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Position = UDim2.new(0, 14, 0, 0)
+			l.Size = UDim2.new(0.45, 0, 1, 0)
+			l.Font = Enum.Font.GothamMedium
+			l.TextSize = 12
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextColor3 = T.Text
+			l.Text = text
+			l.ZIndex = 16
+			l.Parent = r
+			subscribe(function(t) l.TextColor3 = t.Text end)
+
+			local pick = Instance.new("TextButton")
+			pick.AnchorPoint = Vector2.new(1, 0.5)
+			pick.Position = UDim2.new(1, -14, 0.5, 0)
+			pick.Size = UDim2.fromOffset(150, 28)
+			pick.BackgroundColor3 = T.BgDeep
+			pick.BorderSizePixel = 0
+			pick.AutoButtonColor = false
+			pick.Text = ""
+			pick.ZIndex = 16
+			pick.Active = true
+			pick.Parent = r
+			corner(pick, UDim.new(0, 6))
+			local pickStroke = stroke(pick, T.Border, 0.4, 1)
+			subscribe(function(t)
+				pick.BackgroundColor3 = t.BgDeep
+				pickStroke.Color = t.Border
+			end)
+
+			local pickLabel = Instance.new("TextLabel")
+			pickLabel.BackgroundTransparency = 1
+			pickLabel.Position = UDim2.new(0, 10, 0, 0)
+			pickLabel.Size = UDim2.new(1, -28, 1, 0)
+			pickLabel.Font = Enum.Font.GothamMedium
+			pickLabel.TextSize = 11
+			pickLabel.TextXAlignment = Enum.TextXAlignment.Left
+			pickLabel.TextColor3 = T.Text
+			pickLabel.Text = current
+			pickLabel.ZIndex = 17
+			pickLabel.Parent = pick
+			subscribe(function(t) pickLabel.TextColor3 = t.Text end)
+
+			local arrow = Instance.new("TextLabel")
+			arrow.BackgroundTransparency = 1
+			arrow.AnchorPoint = Vector2.new(1, 0.5)
+			arrow.Position = UDim2.new(1, -8, 0.5, 0)
+			arrow.Size = UDim2.fromOffset(14, 14)
+			arrow.Font = Enum.Font.GothamBold
+			arrow.TextSize = 11
+			arrow.TextColor3 = T.Accent
+			arrow.Text = "▾"
+			arrow.ZIndex = 17
+			arrow.Parent = pick
+			subscribe(function(t) arrow.TextColor3 = t.Accent end)
+
+			local panel = Instance.new("Frame")
+			panel.BackgroundColor3 = T.Surface
+			panel.BorderSizePixel = 0
+			panel.Visible = false
+			panel.ZIndex = 220
+			panel.Active = true
+			panel.ClipsDescendants = true
+			panel.Parent = overlayLayer
+			corner(panel, UDim.new(0, 8))
+			rainbowBorder(panel, 1.2, 0.2)
+			subscribe(function(t) panel.BackgroundColor3 = t.Surface end)
+
+			local listScroll = Instance.new("ScrollingFrame")
+			listScroll.Size = UDim2.fromScale(1,1)
+			listScroll.BackgroundTransparency = 1
+			listScroll.BorderSizePixel = 0
+			listScroll.ScrollBarThickness = 2
+			listScroll.ScrollBarImageColor3 = T.Accent
+			listScroll.CanvasSize = UDim2.new(0,0,0,0)
+			listScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+			listScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+			listScroll.ZIndex = 221
+			listScroll.Active = true
+			listScroll.Parent = panel
+			local ll = Instance.new("UIListLayout")
+			ll.Parent = listScroll
+			ll.Padding = UDim.new(0, 2)
+			local lp = Instance.new("UIPadding")
+			lp.PaddingTop = UDim.new(0, 4)
+			lp.PaddingBottom = UDim.new(0, 4)
+			lp.PaddingLeft = UDim.new(0, 4)
+			lp.PaddingRight = UDim.new(0, 4)
+			lp.Parent = listScroll
+
+			local optBtns = {}
+			local opened = false
+			local close, open
+
+			close = function()
+				if not opened then return end
+				opened = false
+				if panel.Parent then
+					tw(panel, EASE_FAST, {Size = UDim2.fromOffset(panel.AbsoluteSize.X, 0)})
+				end
+				task.delay(0.16, function()
+					if not opened and panel.Parent then panel.Visible = false end
+				end)
+			end
+
+			open = function()
+				if opened then return end
+				opened = true
+				local pickAbs = pick.AbsolutePosition
+				local pickSize = pick.AbsoluteSize
+				local screenSize = gui.AbsoluteSize
+				local h = math.min(#options * 30 + 8, 180)
+				local openUp = (screenSize.Y - pickAbs.Y - pickSize.Y) < h + 10
+				local px = math.clamp(pickAbs.X, 4, screenSize.X - pickSize.X - 4)
+				local py = openUp and (pickAbs.Y - h - 4) or (pickAbs.Y + pickSize.Y + 4)
+				panel.Position = UDim2.fromOffset(px, py)
+				panel.Size = UDim2.fromOffset(pickSize.X, 0)
+				panel.Visible = true
+				tw(panel, EASE_OUT, {Size = UDim2.fromOffset(pickSize.X, h)})
+				arrow.Text = openUp and "▴" or "▾"
+			end
+
+			for _, opt in ipairs(options) do
+				local b = Instance.new("TextButton")
+				b.Size = UDim2.new(1, 0, 0, 28)
+				b.BackgroundColor3 = T.BgDeep
+				b.BackgroundTransparency = 1
+				b.BorderSizePixel = 0
+				b.AutoButtonColor = false
+				b.Text = ""
+				b.ZIndex = 222
+				b.Active = true
+				b.Parent = listScroll
+				corner(b, UDim.new(0, 6))
+
+				local ol = Instance.new("TextLabel")
+				ol.BackgroundTransparency = 1
+				ol.Position = UDim2.new(0, 10, 0, 0)
+				ol.Size = UDim2.new(1, -28, 1, 0)
+				ol.Font = Enum.Font.GothamMedium
+				ol.TextSize = 11
+				ol.TextXAlignment = Enum.TextXAlignment.Left
+				ol.TextColor3 = T.Text
+				ol.Text = opt
+				ol.ZIndex = 223
+				ol.Parent = b
+				subscribe(function(t) ol.TextColor3 = t.Text end)
+
+				local check = Instance.new("TextLabel")
+				check.BackgroundTransparency = 1
+				check.AnchorPoint = Vector2.new(1, 0.5)
+				check.Position = UDim2.new(1, -8, 0.5, 0)
+				check.Size = UDim2.fromOffset(14, 14)
+				check.Font = Enum.Font.GothamBold
+				check.TextSize = 12
+				check.TextColor3 = T.Accent
+				check.Text = (opt == current) and "✓" or ""
+				check.ZIndex = 223
+				check.Parent = b
+				subscribe(function(t) check.TextColor3 = t.Accent end)
+
+				b.MouseEnter:Connect(function() tw(b, EASE_FAST, {BackgroundTransparency = 0, BackgroundColor3 = T.SurfaceHover}) end)
+				b.MouseLeave:Connect(function() tw(b, EASE_FAST, {BackgroundTransparency = 1}) end)
+				b.MouseButton1Click:Connect(function()
+					current = opt
+					pickLabel.Text = opt
+					for _, ob in ipairs(optBtns) do
+						ob.check.Text = (ob.opt == opt) and "✓" or ""
+					end
+					close()
+					if cb then task.spawn(cb, opt) end
+				end)
+				table.insert(optBtns, {opt = opt, check = check})
+			end
+
+			pick.MouseButton1Click:Connect(function()
+				if opened then close() else open() end
+			end)
+
+			table.insert(globalClickListeners, function(i)
+				if not opened or not panel.Parent then return end
+				local ax, ay = i.Position.X, i.Position.Y
+				local p1, p2 = panel.AbsolutePosition, panel.AbsolutePosition + panel.AbsoluteSize
+				local k1, k2 = pick.AbsolutePosition, pick.AbsolutePosition + pick.AbsoluteSize
+				local inP = ax >= p1.X and ax <= p2.X and ay >= p1.Y and ay <= p2.Y
+				local inK = ax >= k1.X and ax <= k2.X and ay >= k1.Y and ay <= k2.Y
+				if not inP and not inK then close() end
+			end)
+
+			table.insert(Window._dropdowns, close)
+
+			local api = {Instance = r}
+			function api:Get() return current end
+			function api:Set(v)
+				current = v; pickLabel.Text = v
+				for _, ob in ipairs(optBtns) do ob.check.Text = (ob.opt == v) and "✓" or "" end
+			end
+			return api
+		end
+
+		-- 颜色选择器
+		function Tab:AddColorPicker(text, defaultColor, cb)
+			local color = defaultColor or T.Accent
+			local r = rowBase(42)
+
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Position = UDim2.new(0, 14, 0, 0)
+			l.Size = UDim2.new(1, -60, 1, 0)
+			l.Font = Enum.Font.GothamMedium
+			l.TextSize = 12
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextColor3 = T.Text
+			l.Text = text
+			l.ZIndex = 16
+			l.Parent = r
+			subscribe(function(t) l.TextColor3 = t.Text end)
+
+			local swatch = Instance.new("TextButton")
+			swatch.AnchorPoint = Vector2.new(1, 0.5)
+			swatch.Position = UDim2.new(1, -14, 0.5, 0)
+			swatch.Size = UDim2.fromOffset(36, 22)
+			swatch.BackgroundColor3 = color
+			swatch.BorderSizePixel = 0
+			swatch.AutoButtonColor = false
+			swatch.Text = ""
+			swatch.ZIndex = 16
+			swatch.Active = true
+			swatch.Parent = r
+			corner(swatch, UDim.new(0, 6))
+			stroke(swatch, T.Border, 0.2, 1)
+
+			local pickerOpen = false
+			local picker = Instance.new("Frame")
+			picker.Size = UDim2.fromOffset(196, 92)
+			picker.BackgroundColor3 = T.Surface
+			picker.BorderSizePixel = 0
+			picker.Visible = false
+			picker.ZIndex = 230
+			picker.Active = true
+			picker.Parent = overlayLayer
+			corner(picker, UDim.new(0, 8))
+			rainbowBorder(picker, 1.2, 0.3)
+			subscribe(function(t) picker.BackgroundColor3 = t.Surface end)
+
+			local presets = {
+				Color3.fromRGB(255,80,80), Color3.fromRGB(255,160,80), Color3.fromRGB(255,220,80),
+				Color3.fromRGB(80,220,140), Color3.fromRGB(80,180,255), Color3.fromRGB(160,80,255),
+				Color3.fromRGB(255,80,180), Color3.fromRGB(40,40,50),  Color3.fromRGB(255,255,255),
+			}
+			local grid = Instance.new("UIGridLayout")
+			grid.CellSize = UDim2.fromOffset(38, 30)
+			grid.CellPadding = UDim2.fromOffset(8, 8)
+			grid.Parent = picker
+			local pp = Instance.new("UIPadding")
+			pp.PaddingTop = UDim.new(0, 14)
+			pp.PaddingLeft = UDim.new(0, 14)
+			pp.Parent = picker
+
+			for _, c in ipairs(presets) do
+				local cb2 = Instance.new("TextButton")
+				cb2.BackgroundColor3 = c
+				cb2.BorderSizePixel = 0
+				cb2.AutoButtonColor = false
+				cb2.Text = ""
+				cb2.ZIndex = 231
+				cb2.Parent = picker
+				corner(cb2, UDim.new(0, 5))
+				stroke(cb2, T.Border, 0.4, 1)
+				cb2.MouseButton1Click:Connect(function()
+					color = c
+					swatch.BackgroundColor3 = c
+					if cb then task.spawn(cb, c) end
+					pickerOpen = false
+					picker.Visible = false
+				end)
+			end
+
+			swatch.MouseButton1Click:Connect(function()
+				pickerOpen = not pickerOpen
+				if pickerOpen then
+					local sa = swatch.AbsolutePosition
+					picker.Position = UDim2.fromOffset(sa.X - 160, sa.Y + swatch.AbsoluteSize.Y + 4)
+					picker.Visible = true
+				else
+					picker.Visible = false
+				end
+			end)
+
+			table.insert(globalClickListeners, function(i)
+				if not pickerOpen then return end
+				local ax, ay = i.Position.X, i.Position.Y
+				local p1, p2 = picker.AbsolutePosition, picker.AbsolutePosition + picker.AbsoluteSize
+				local k1, k2 = swatch.AbsolutePosition, swatch.AbsolutePosition + swatch.AbsoluteSize
+				if not (ax >= p1.X and ax <= p2.X and ay >= p1.Y and ay <= p2.Y)
+				and not (ax >= k1.X and ax <= k2.X and ay >= k1.Y and ay <= k2.Y) then
+					pickerOpen = false; picker.Visible = false
+				end
+			end)
+
+			local api = {Instance = r}
+			function api:Set(c) color = c; swatch.BackgroundColor3 = c end
+			function api:Get() return color end
+			return api
+		end
+
+		-- 文本输入
+		function Tab:AddInput(text, placeholder, cb)
+			local r = rowBase(42)
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Position = UDim2.new(0, 14, 0, 0)
+			l.Size = UDim2.new(0.4, 0, 1, 0)
+			l.Font = Enum.Font.GothamMedium
+			l.TextSize = 12
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextColor3 = T.Text
+			l.Text = text
+			l.ZIndex = 16
+			l.Parent = r
+			subscribe(function(t) l.TextColor3 = t.Text end)
+
+			local box = Instance.new("TextBox")
+			box.AnchorPoint = Vector2.new(1, 0.5)
+			box.Position = UDim2.new(1, -14, 0.5, 0)
+			box.Size = UDim2.fromOffset(170, 28)
+			box.BackgroundColor3 = T.BgDeep
+			box.BorderSizePixel = 0
+			box.Font = Enum.Font.Gotham
+			box.TextSize = 12
+			box.TextColor3 = T.Text
+			box.PlaceholderText = placeholder or ""
+			box.PlaceholderColor3 = T.TextMuted
+			box.Text = ""
+			box.ClearTextOnFocus = false
+			box.ZIndex = 16
+			box.Parent = r
+			corner(box, UDim.new(0, 6))
+			local bs = stroke(box, T.Border, 0.4, 1)
+			subscribe(function(t)
+				box.BackgroundColor3 = t.BgDeep
+				box.TextColor3 = t.Text
+				box.PlaceholderColor3 = t.TextMuted
+				bs.Color = t.Border
+			end)
+			local p = Instance.new("UIPadding")
+			p.PaddingLeft = UDim.new(0, 10)
+			p.PaddingRight = UDim.new(0, 10)
+			p.Parent = box
+
+			box.Focused:Connect(function() tw(bs, EASE_FAST, {Color = T.Accent, Transparency = 0}) end)
+			box.FocusLost:Connect(function()
+				tw(bs, EASE_FAST, {Color = T.Border, Transparency = 0.4})
+				if cb then task.spawn(cb, box.Text) end
+			end)
+
+			local api = {Instance = r}
+			function api:Set(t) box.Text = t end
+			function api:Get() return box.Text end
+			return api
+		end
+
+		function Tab:AddKeybind(text, defaultKey, cb)
+			local r = rowBase(42)
+			local key = defaultKey
+			local listening = false
+
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Position = UDim2.new(0, 14, 0, 0)
+			l.Size = UDim2.new(1, -110, 1, 0)
+			l.Font = Enum.Font.GothamMedium
+			l.TextSize = 12
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextColor3 = T.Text
+			l.Text = text
+			l.ZIndex = 16
+			l.Parent = r
+			subscribe(function(t) l.TextColor3 = t.Text end)
+
+			local btn = Instance.new("TextButton")
+			btn.AnchorPoint = Vector2.new(1, 0.5)
+			btn.Position = UDim2.new(1, -14, 0.5, 0)
+			btn.Size = UDim2.fromOffset(86, 28)
+			btn.BackgroundColor3 = T.BgDeep
+			btn.BorderSizePixel = 0
+			btn.AutoButtonColor = false
+			btn.Font = Enum.Font.GothamSemibold
+			btn.TextSize = 11
+			btn.TextColor3 = T.Text
+			btn.Text = key and key.Name or "未绑定"
+			btn.ZIndex = 16
+			btn.Active = true
+			btn.Parent = r
+			corner(btn, UDim.new(0, 6))
+			local bs = stroke(btn, T.Border, 0.4, 1)
+			subscribe(function(t)
+				btn.BackgroundColor3 = t.BgDeep
+				btn.TextColor3 = t.Text
+				bs.Color = t.Border
+			end)
+
+			btn.MouseButton1Click:Connect(function()
+				listening = true
+				btn.Text = "按下..."
+				tw(bs, EASE_FAST, {Color = T.Accent, Transparency = 0})
+			end)
+			UserInputService.InputBegan:Connect(function(input, gp)
+				if listening and input.UserInputType == Enum.UserInputType.Keyboard then
+					listening = false
+					key = input.KeyCode
+					btn.Text = key.Name
+					tw(bs, EASE_FAST, {Color = T.Border, Transparency = 0.4})
+				elseif key and not gp and not listening
+					and input.UserInputType == Enum.UserInputType.Keyboard
+					and input.KeyCode == key then
+					if cb then task.spawn(cb) end
+				end
+			end)
+			local api = {Instance = r}
+			function api:Set(k) key = k; btn.Text = k.Name end
+			function api:Get() return key end
+			return api
+		end
+
+		-- 执行器
+		function Tab:AddExecutor()
+			self:AddSection("脚本执行器")
+			local r = rowBase(220)
+
+			local box = Instance.new("TextBox")
+			box.Position = UDim2.new(0, 12, 0, 10)
+			box.Size = UDim2.new(1, -24, 1, -56)
+			box.BackgroundColor3 = T.BgDeep
+			box.BorderSizePixel = 0
+			box.Font = Enum.Font.Code
+			box.TextSize = 12
+			box.TextColor3 = Color3.fromRGB(180,255,180)
+			box.PlaceholderText = "-- 在此粘贴 Lua 代码"
+			box.PlaceholderColor3 = T.TextMuted
+			box.Text = ""
+			box.MultiLine = true
+			box.TextXAlignment = Enum.TextXAlignment.Left
+			box.TextYAlignment = Enum.TextYAlignment.Top
+			box.TextWrapped = true
+			box.ClearTextOnFocus = false
+			box.ZIndex = 16
+			box.Parent = r
+			corner(box, UDim.new(0, 6))
+			local bs = stroke(box, T.Border, 0.4, 1)
+			subscribe(function(t)
+				box.BackgroundColor3 = t.BgDeep
+				box.PlaceholderColor3 = t.TextMuted
+				bs.Color = t.Border
+			end)
+			local bp = Instance.new("UIPadding")
+			bp.PaddingTop = UDim.new(0, 8)
+			bp.PaddingLeft = UDim.new(0, 10)
+			bp.PaddingRight = UDim.new(0, 10)
+			bp.Parent = box
+
+			local btnRow = Instance.new("Frame")
+			btnRow.Position = UDim2.new(0, 12, 1, -40)
+			btnRow.Size = UDim2.new(1, -24, 0, 32)
+			btnRow.BackgroundTransparency = 1
+			btnRow.ZIndex = 16
+			btnRow.Parent = r
+
+			local function execBtn(text, color, x, w, fn)
+				local b = Instance.new("TextButton")
+				b.Position = UDim2.fromOffset(x, 0)
+				b.Size = UDim2.fromOffset(w, 30)
+				b.BackgroundColor3 = color
+				b.BorderSizePixel = 0
+				b.AutoButtonColor = false
+				b.Font = Enum.Font.GothamBold
+				b.TextSize = 11
+				b.Text = text
+				b.TextColor3 = Color3.fromRGB(255,255,255)
+				b.ZIndex = 17
+				b.Parent = btnRow
+				corner(b, UDim.new(0, 6))
+				local sc = Instance.new("UIScale")
+				sc.Parent = b
+				b.MouseEnter:Connect(function() tw(sc, EASE_FAST, {Scale = 1.05}) end)
+				b.MouseLeave:Connect(function() tw(sc, EASE_FAST, {Scale = 1}) end)
+				b.MouseButton1Click:Connect(fn)
+				return b
+			end
+
+			local execB = execBtn("▶ 执行", T.Accent, 0, 100, function()
+				local code = box.Text
+				if code == "" then DynamicUI:Notify("脚本为空", "warn") return end
+				if not loadstring then DynamicUI:Notify("不支持 loadstring", "error", 3) return end
+				local fn, err = loadstring(code)
+				if not fn then DynamicUI:Notify("语法错误: "..tostring(err), "error", 4) return end
+				local ok, runErr = pcall(fn)
+				if ok then DynamicUI:Notify("执行成功", "success")
+				else DynamicUI:Notify("运行错误: "..tostring(runErr), "error", 4) end
+			end)
+			subscribe(function(t) execB.BackgroundColor3 = t.Accent end)
+
+			execBtn("清空", Color3.fromRGB(228,174,70), 108, 70, function()
+				box.Text = ""
+				DynamicUI:Notify("已清空", "info")
+			end)
+
+			execBtn("从链接加载", Color3.fromRGB(86,150,200), 186, 100, function()
+				local url = box.Text
+				if not url:match("^https?://") then DynamicUI:Notify("请输入 URL", "warn") return end
+				if not game.HttpGet then DynamicUI:Notify("不支持 HttpGet", "error") return end
+				local ok, content = pcall(function() return game:HttpGet(url) end)
+				if not ok then DynamicUI:Notify("加载失败", "error") return end
+				box.Text = content
+				DynamicUI:Notify("已加载 "..#content.." 字符", "success")
+			end)
+
+			return {Instance = r}
+		end
+
+		if not Window.current then
+			task.delay(0.05, function() switchTab(name) end)
+		end
+		return Tab
+	end
+
+	------------------------------------------------------------------
+	-- 公开 API
+	------------------------------------------------------------------
+	function Window:SelectTab(name) if Window.tabs[name] then switchTab(name) end end
+	function Window:SetTitle(text) logoTitle.Text = text; iTitle.Text = text end
+
+	function Window:SetTheme(name)
+		local newT = THEMES[name]
+		if not newT then return end
+		for k, v in pairs(newT) do T[k] = v end
+		notifyAll()
+		DynamicUI:Notify("主题已切换为 " .. name, "info")
+	end
+
+	function Window:SetAccent(color)
+		T.Accent = color
+		-- 自动算出 AccentSoft（变暗一点）
+		T.AccentSoft = Color3.new(color.R * 0.3, color.G * 0.3, color.B * 0.3)
+		notifyAll()
+		DynamicUI:Notify("主题色已更改", "rainbow")
+	end
+
+	function Window:Show()
+		window.Visible = true; glow.Visible = true
+		tw(windowScale, EASE_SPRING, {Scale = 1})
+		tw(window, EASE_OUT, {BackgroundTransparency = 0})
+		tw(glow, EASE_OUT, {ImageTransparency = 0.7})
+	end
+	function Window:Hide()
+		tw(windowScale, EASE_FAST, {Scale = 0.9})
+		tw(window, EASE_OUT, {BackgroundTransparency = 1})
+		tw(glow, EASE_OUT, {ImageTransparency = 1})
+		task.delay(0.3, function()
+			if window.Parent then window.Visible = false end
+			glow.Visible = false
+		end)
+	end
+	function Window:Toggle() if window.Visible then self:Hide() else self:Show() end end
+	function Window:Bind(keycode)
+		UserInputService.InputBegan:Connect(function(input, gp)
+			if not gp and input.KeyCode == keycode then self:Toggle() end
+		end)
+	end
+	function Window:Destroy()
+		if window.Parent then window:Destroy() end
+		if island.Parent then island:Destroy() end
+		if overlayLayer.Parent then overlayLayer:Destroy() end
+		if glow.Parent then glow:Destroy() end
+	end
+
+	local minimized = false
+	setMin = function(s)
+		minimized = s
+		if s then
+			tw(windowScale, EASE_FAST, {Scale = 0.85})
+			tw(window, EASE_OUT, {BackgroundTransparency = 1})
+			tw(glow, EASE_OUT, {ImageTransparency = 1})
+			task.delay(0.3, function()
+				if minimized and window.Parent then
+					window.Visible = false; glow.Visible = false
+				end
+			end)
+			island.Visible = true
+			island.Size = UDim2.fromOffset(40, 40)
+			island.BackgroundTransparency = 1
+			tw(island, EASE_SPRING, {Size = cfg.IslandSize, BackgroundTransparency = 0})
+		else
+			window.Visible = true; glow.Visible = true
+			windowScale.Scale = 0.85
+			window.BackgroundTransparency = 1
+			tw(windowScale, EASE_SPRING, {Scale = 1})
+			tw(window, EASE_OUT, {BackgroundTransparency = 0})
+			tw(glow, EASE_OUT, {ImageTransparency = 0.7})
+			tw(island, EASE_OUT, {Size = UDim2.fromOffset(40, 40), BackgroundTransparency = 1})
+			task.delay(0.3, function() if not minimized and island.Parent then island.Visible = false end end)
+		end
+	end
+
+	btnMin.MouseButton1Click:Connect(function() setMin(true) end)
+	btnClose.MouseButton1Click:Connect(function()
+		tw(windowScale, EASE_FAST, {Scale = 0.7})
+		tw(window, EASE_OUT, {BackgroundTransparency = 1})
+		tw(glow, EASE_OUT, {ImageTransparency = 1})
+		tw(island, EASE_OUT, {Size = UDim2.fromOffset(0,0), BackgroundTransparency = 1})
+		task.wait(0.36)
+		Window:Destroy()
+	end)
+
+	RunService.RenderStepped:Connect(function()
+		if glow.Parent and window.Parent and window.Visible then
+			glow.Position = window.Position
+			glow.Size = UDim2.fromOffset(window.AbsoluteSize.X + 140, window.AbsoluteSize.Y + 140)
+		end
+	end)
+
+	showLoader(gui, T.Accent, function()
+		window.Position = UDim2.new(0.5, 0, 0.5, 0)
+		window.BackgroundTransparency = 1
+		windowScale.Scale = 0.85
+		window.Visible = true
+		glow.Visible = true
+		glow.ImageTransparency = 1
+		tw(windowScale, EASE_SPRING, {Scale = 1})
+		tw(window, EASE_OUT, {BackgroundTransparency = 0})
+		tw(glow, EASE_SLOW, {ImageTransparency = 0.7})
+		task.wait()
+		clampPosition(window, gui.AbsoluteSize)
+	end)
+
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		if window.Visible then clampPosition(window, gui.AbsoluteSize) end
+		if island.Visible then clampPosition(island, gui.AbsoluteSize) end
+	end)
+
+	return Window
+end
+
+return DynamicUI
